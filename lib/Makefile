@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1996-2010. All Rights Reserved.
+# Copyright Ericsson AB 1996-2011. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -51,7 +51,7 @@ else
 # --------------
 #
     ERTS_SUB_DIRECTORIES = stdlib sasl kernel compiler
-    OTHER_SUB_DIRECTORIES = tools test_server
+    OTHER_SUB_DIRECTORIES = tools test_server common_test runtime_tools
     ifdef BUILD_ALL
       ifeq ($(findstring win32,$(TARGET)),win32) # BUILD_ALL on win32
         OTHER_SUB_DIRECTORIES += 			\

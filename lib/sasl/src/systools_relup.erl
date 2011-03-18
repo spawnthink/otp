@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2011. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -370,10 +370,10 @@ collect_appup_scripts(_, [], _, Ws, RUs) -> {RUs, Ws}.
 %% ToApps = [#application]
 %%
 create_add_app_scripts(FromRel, ToRel, RU0s, W0s) -> 
-    AddedNs = [N || {N, _V, _T} <- ToRel#release.applications,
+    AddedNs = [{N, T} || {N, _V, T} <- ToRel#release.applications,
 		    not lists:keymember(N, 1, FromRel#release.applications)],
     %% io:format("Added apps: ~p~n", [AddedNs]),
-    RUs = [[{add_application, N}] || N <- AddedNs],
+    RUs = [[{add_application, N, T}] || {N, T} <- AddedNs],
     {RUs ++ RU0s, W0s}.
 
 

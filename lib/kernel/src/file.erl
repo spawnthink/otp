@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2010. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -240,7 +240,7 @@ write_file(Name, Bin) ->
 %% when it is time to change file server protocol again.
 %% Meanwhile, it is implemented here, slightly less efficient.
 
--spec write_file(Name :: name(), Bin :: binary(), Modes :: [mode()]) -> 
+-spec write_file(Name :: name(), Bin :: iodata(), Modes :: [mode()]) ->
 	'ok' | {'error', posix()}.
 
 write_file(Name, Bin, ModeList) when is_list(ModeList) ->

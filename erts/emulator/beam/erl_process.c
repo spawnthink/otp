@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1996-2010. All Rights Reserved.
+ * Copyright Ericsson AB 1996-2011. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -590,6 +590,118 @@ erts_sched_finish_poke(ErtsSchedulerSleepInfo *ssi, erts_aint32_t flags)
     }
 }
 
+typedef struct erts_misc_aux_work_t_ erts_misc_aux_work_t;
+struct erts_misc_aux_work_t_ {
+    erts_misc_aux_work_t *next;
+    void (*func)(void *);
+    void *arg;
+};
+
+typedef struct {
+    erts_smp_mtx_t mtx;
+    erts_misc_aux_work_t *first;
+    erts_misc_aux_work_t *last;
+} erts_misc_aux_work_q_t;
+
+typedef union {
+    erts_misc_aux_work_q_t data;
+    char align[ERTS_ALC_CACHE_LINE_ALIGN_SIZE(sizeof(erts_misc_aux_work_q_t))];
+} erts_algnd_misc_aux_work_q_t;
+
+static erts_algnd_misc_aux_work_q_t *misc_aux_work_queues;
+
+ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(misc_aux_work,
+				 erts_misc_aux_work_t,
+				 200,
+				 ERTS_ALC_T_MISC_AUX_WORK)
+
+static void
+init_misc_aux_work(void)
+{
+    int ix;
+
+    init_misc_aux_work_alloc();
+
+    misc_aux_work_queues = 
+	erts_alloc_permanent_cache_aligned(ERTS_ALC_T_MISC_AUX_WORK_Q,
+					   erts_no_schedulers *
+					   sizeof(erts_algnd_misc_aux_work_q_t));
+
+    for (ix = 0; ix < erts_no_schedulers; ix++) {
+	erts_smp_mtx_init_x(&misc_aux_work_queues[ix].data.mtx,
+			    "misc_aux_work_queue",
+			    make_small(ix + 1));
+	misc_aux_work_queues[ix].data.first = NULL;
+	misc_aux_work_queues[ix].data.last = NULL;
+    }
+}
+
+static void
+handle_misc_aux_work(ErtsSchedulerData *esdp)
+{
+    int ix = (int) esdp->no - 1;
+    erts_misc_aux_work_t *mawp;
+
+    erts_smp_mtx_lock(&misc_aux_work_queues[ix].data.mtx);
+    mawp = misc_aux_work_queues[ix].data.first;
+    misc_aux_work_queues[ix].data.first = NULL;
+    misc_aux_work_queues[ix].data.last = NULL;
+    erts_smp_mtx_unlock(&misc_aux_work_queues[ix].data.mtx);
+
+    while (mawp) {
+	erts_misc_aux_work_t *free_mawp;
+	mawp->func(mawp->arg);
+	free_mawp = mawp;
+	mawp = mawp->next;
+	misc_aux_work_free(free_mawp);
+    }
+}
+
+void
+erts_smp_schedule_misc_aux_work(int ignore_self,
+				int max_sched,
+				void (*func)(void *),
+				void *arg)
+{
+    int ix, ignore_ix = -1;
+
+    if (ignore_self) {
+	ErtsSchedulerData *esdp = erts_get_scheduler_data();
+	if (esdp)
+	    ignore_ix = (int) esdp->no - 1;
+    }
+
+    ASSERT(0 <= max_sched && max_sched <= erts_no_schedulers);
+
+    for (ix = 0; ix < max_sched; ix++) {
+	erts_aint32_t aux_work;
+	erts_misc_aux_work_t *mawp;
+	ErtsSchedulerSleepInfo *ssi;
+	if (ix == ignore_ix)
+	    continue;
+
+	mawp = misc_aux_work_alloc();
+
+	mawp->func = func;
+	mawp->arg = arg;
+	mawp->next = NULL;
+
+	erts_smp_mtx_lock(&misc_aux_work_queues[ix].data.mtx);
+	if (!misc_aux_work_queues[ix].data.last)
+	    misc_aux_work_queues[ix].data.first = mawp;
+	else
+	    misc_aux_work_queues[ix].data.last->next = mawp;
+	misc_aux_work_queues[ix].data.last = mawp;
+	erts_smp_mtx_unlock(&misc_aux_work_queues[ix].data.mtx);
+
+	ssi = ERTS_SCHED_SLEEP_INFO_IX(ix);
+	aux_work = erts_smp_atomic32_bor(&ssi->aux_work,
+					 ERTS_SSI_AUX_WORK_MISC);
+	if ((aux_work & ERTS_SSI_AUX_WORK_MISC) == 0)
+	    erts_sched_poke(ssi);
+   }
+}
+
 #ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
 void
 erts_smp_notify_check_children_needed(void)
@@ -615,6 +727,12 @@ blockable_aux_work(ErtsSchedulerData *esdp,
 		   erts_aint32_t aux_work)
 {
     if (aux_work & ERTS_SSI_BLOCKABLE_AUX_WORK_MASK) {
+	if (aux_work & ERTS_SSI_AUX_WORK_MISC) {
+	    aux_work = erts_smp_atomic32_band(&ssi->aux_work,
+					      ~ERTS_SSI_AUX_WORK_MISC);
+	    aux_work &= ~ERTS_SSI_AUX_WORK_MISC;
+	    handle_misc_aux_work(esdp);
+	}
 #ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
 	if (aux_work & ERTS_SSI_AUX_WORK_CHECK_CHILDREN) {
 	    aux_work = erts_smp_atomic32_band(&ssi->aux_work,
@@ -693,15 +811,31 @@ erts_active_schedulers(void)
     return as;
 }
 
+#ifdef ERTS_SMP
+
+static ERTS_INLINE void
+clear_sys_scheduling(void)
+{
+    erts_smp_atomic32_set_relb(&doing_sys_schedule, 0);
+}
+
+static ERTS_INLINE int
+try_set_sys_scheduling(void)
+{
+    return 0 == erts_smp_atomic32_cmpxchg_acqb(&doing_sys_schedule, 1, 0);
+}
+
+#endif
+
 static ERTS_INLINE int
 prepare_for_sys_schedule(void)
 {
 #ifdef ERTS_SMP
     while (!erts_port_task_have_outstanding_io_tasks()
-	   && !erts_smp_atomic32_xchg(&doing_sys_schedule, 1)) {
+	   && try_set_sys_scheduling()) {
 	if (!erts_port_task_have_outstanding_io_tasks())
 	    return 1;
-	erts_smp_atomic32_set(&doing_sys_schedule, 0);
+	clear_sys_scheduling();
     }
     return 0;
 #else
@@ -997,8 +1131,8 @@ scheduler_wait(int *fcalls, ErtsSchedulerData *esdp, ErtsRunQueue *rq)
 
 	    erl_sys_schedule(1); /* Might give us something to do */
 
-	    dt = do_time_read_and_reset();
-	    if (dt) bump_timer(dt);
+	    dt = erts_do_time_read_and_reset();
+	    if (dt) erts_bump_timer(dt);
 
 	sys_aux_work:
 
@@ -1031,7 +1165,7 @@ scheduler_wait(int *fcalls, ErtsSchedulerData *esdp, ErtsRunQueue *rq)
 	     * call erl_sys_schedule() until it is handled.
 	     */
 	    if (erts_port_task_have_outstanding_io_tasks()) {
-		erts_smp_atomic32_set(&doing_sys_schedule, 0);
+		clear_sys_scheduling();
 		/*
 		 * Got to check that we still got I/O tasks; otherwise
 		 * we have to continue checking for I/O...
@@ -1050,7 +1184,7 @@ scheduler_wait(int *fcalls, ErtsSchedulerData *esdp, ErtsRunQueue *rq)
 	 * sleep in erl_sys_schedule().
 	 */
 	if (erts_port_task_have_outstanding_io_tasks()) {
-	    erts_smp_atomic32_set(&doing_sys_schedule, 0);
+	    clear_sys_scheduling();
 
 	    /*
 	     * Got to check that we still got I/O tasks; otherwise
@@ -1094,8 +1228,8 @@ scheduler_wait(int *fcalls, ErtsSchedulerData *esdp, ErtsRunQueue *rq)
 
 	    erl_sys_schedule(0);
 
-	    dt = do_time_read_and_reset();
-	    if (dt) bump_timer(dt);
+	    dt = erts_do_time_read_and_reset();
+	    if (dt) erts_bump_timer(dt);
 
 	    flgs = sched_prep_cont_spin_wait(ssi);
 	    if (flgs & ERTS_SSI_FLG_WAITING)
@@ -1104,7 +1238,7 @@ scheduler_wait(int *fcalls, ErtsSchedulerData *esdp, ErtsRunQueue *rq)
 	sys_woken:
 	    erts_smp_runq_lock(rq);
 	sys_locked_woken:
-	    erts_smp_atomic32_set(&doing_sys_schedule, 0);
+	    clear_sys_scheduling();
 	    if (flgs & ~ERTS_SSI_FLG_SUSPENDED)
 		erts_smp_atomic32_band(&ssi->flags, ERTS_SSI_FLG_SUSPENDED);
 	    sched_active_sys(esdp->no, rq);
@@ -1167,6 +1301,7 @@ wake_scheduler(ErtsRunQueue *rq, int incq, int one)
 	res = sl->list != NULL;
 	erts_smp_spin_unlock(&sl->lock);
 
+	ERTS_THR_MEMORY_BARRIER;
 	flgs = ssi_flags_set_wake(ssi);
 	erts_sched_finish_poke(ssi, flgs);
 
@@ -1176,6 +1311,8 @@ wake_scheduler(ErtsRunQueue *rq, int incq, int one)
     else {
 	sl->list = NULL;
 	erts_smp_spin_unlock(&sl->lock);
+
+	ERTS_THR_MEMORY_BARRIER;
 	do {
 	    ErtsSchedulerSleepInfo *wake_ssi = ssi;
 	    ssi = ssi->next;
@@ -2393,16 +2530,9 @@ erts_init_scheduling(int mrq, int no_schedulers, int no_schedulers_online)
 
     n = (int) (mrq ? no_schedulers : 1);
 
-    erts_aligned_run_queues = erts_alloc(ERTS_ALC_T_RUNQS,
-					 (sizeof(ErtsAlignedRunQueue)*(n+1)));
-    if ((((UWord) erts_aligned_run_queues) & ERTS_CACHE_LINE_MASK) != 0)
-	erts_aligned_run_queues = ((ErtsAlignedRunQueue *)
-				   ((((UWord) erts_aligned_run_queues)
-				     & ~ERTS_CACHE_LINE_MASK)
-				    + ERTS_CACHE_LINE_SIZE));
-
-    ASSERT((((UWord) erts_aligned_run_queues) & ERTS_CACHE_LINE_MASK) == 0);
-
+    erts_aligned_run_queues = 
+	erts_alloc_permanent_cache_aligned(ERTS_ALC_T_RUNQS,
+					   sizeof(ErtsAlignedRunQueue) * n);
 #ifdef ERTS_SMP
     erts_smp_atomic32_init(&no_empty_run_queues, 0);
 #endif
@@ -2497,14 +2627,10 @@ erts_init_scheduling(int mrq, int no_schedulers, int no_schedulers_online)
 #ifdef ERTS_SMP
     /* Create and initialize scheduler sleep info */
 
-    aligned_sched_sleep_info = erts_alloc(ERTS_ALC_T_SCHDLR_SLP_INFO,
-					  (sizeof(ErtsAlignedSchedulerSleepInfo)
-					   *(n+1)));
-    if ((((UWord) aligned_sched_sleep_info) & ERTS_CACHE_LINE_MASK) == 0)
-	aligned_sched_sleep_info = ((ErtsAlignedSchedulerSleepInfo *)
-				    ((((UWord) aligned_sched_sleep_info)
-				      & ~ERTS_CACHE_LINE_MASK)
-				     + ERTS_CACHE_LINE_SIZE));
+    aligned_sched_sleep_info =
+	erts_alloc_permanent_cache_aligned(ERTS_ALC_T_SCHDLR_SLP_INFO,
+					   n * sizeof(ErtsAlignedSchedulerSleepInfo));
+
     for (ix = 0; ix < n; ix++) {
 	ErtsSchedulerSleepInfo *ssi = ERTS_SCHED_SLEEP_INFO_IX(ix);
 #if 0 /* no need to initialize these... */
@@ -2519,16 +2645,9 @@ erts_init_scheduling(int mrq, int no_schedulers, int no_schedulers_online)
 
     /* Create and initialize scheduler specific data */
 
-    erts_aligned_scheduler_data = erts_alloc(ERTS_ALC_T_SCHDLR_DATA,
-					     (sizeof(ErtsAlignedSchedulerData)
-					      *(n+1)));
-    if ((((UWord) erts_aligned_scheduler_data) & ERTS_CACHE_LINE_MASK) != 0)
-	erts_aligned_scheduler_data = ((ErtsAlignedSchedulerData *)
-				       ((((UWord) erts_aligned_scheduler_data)
-					 & ~ERTS_CACHE_LINE_MASK)
-					+ ERTS_CACHE_LINE_SIZE));
-
-    ASSERT((((UWord) erts_aligned_scheduler_data) & ERTS_CACHE_LINE_MASK) == 0);
+    erts_aligned_scheduler_data = 
+	erts_alloc_permanent_cache_aligned(ERTS_ALC_T_SCHDLR_DATA,
+					   n*sizeof(ErtsAlignedSchedulerData));					   
 
     for (ix = 0; ix < n; ix++) {
 	ErtsSchedulerData *esdp = ERTS_SCHEDULER_IX(ix);
@@ -2612,6 +2731,8 @@ erts_init_scheduling(int mrq, int no_schedulers, int no_schedulers_online)
 
     erts_smp_atomic32_init(&doing_sys_schedule, 0);
 
+    init_misc_aux_work();
+
 #else /* !ERTS_SMP */
     {
 	ErtsSchedulerData *esdp;
@@ -2628,6 +2749,15 @@ erts_init_scheduling(int mrq, int no_schedulers, int no_schedulers_online)
 
     /* init port tasks */
     erts_port_task_init();
+
+#ifndef ERTS_SMP
+#ifdef ERTS_DO_VERIFY_UNUSED_TEMP_ALLOC
+    erts_scheduler_data->verify_unused_temp_alloc
+	= erts_alloc_get_verify_unused_temp_alloc(
+	    &erts_scheduler_data->verify_unused_temp_alloc_data);
+    ERTS_VERIFY_UNUSED_TEMP_ALLOC(NULL);
+#endif
+#endif
 }
 
 ErtsRunQueue *
@@ -2737,6 +2867,19 @@ resume_process(Process *p)
 	erl_exit(1, "bad state in resume_process()\n");
     }
     p->rstatus = P_FREE;    
+}
+
+int
+erts_get_max_no_executing_schedulers(void)
+{
+#ifdef ERTS_SMP
+    if (erts_smp_atomic32_read(&schdlr_sspnd.changing))
+	return (int) erts_no_schedulers;
+    ERTS_THR_MEMORY_BARRIER;
+    return (int) erts_smp_atomic32_read(&schdlr_sspnd.active);
+#else
+    return 1;
+#endif
 }
 
 #ifdef ERTS_SMP
@@ -3573,6 +3716,13 @@ sched_thread_func(void *vesdp)
 	ERTS_SCHDLR_SSPND_CHNG_SET(0, ERTS_SCHDLR_SSPND_CHNG_WAITER);
     }
     erts_smp_mtx_unlock(&schdlr_sspnd.mtx);
+
+#ifdef ERTS_DO_VERIFY_UNUSED_TEMP_ALLOC
+    ((ErtsSchedulerData *) vesdp)->verify_unused_temp_alloc
+	= erts_alloc_get_verify_unused_temp_alloc(
+	    &((ErtsSchedulerData *) vesdp)->verify_unused_temp_alloc_data);
+    ERTS_VERIFY_UNUSED_TEMP_ALLOC(NULL);
+#endif
 
     process_main();
     /* No schedulers should *ever* terminate */
@@ -5070,10 +5220,10 @@ Process *schedule(Process *p, int calls)
 
 	ERTS_SMP_CHK_NO_PROC_LOCKS;
 
-	dt = do_time_read_and_reset();
+	dt = erts_do_time_read_and_reset();
 	if (dt) {
 	    erts_smp_runq_unlock(rq);
-	    bump_timer(dt);
+	    erts_bump_timer(dt);
 	    erts_smp_runq_lock(rq);
 	}
 	BM_STOP_TIMER(system);
@@ -5214,11 +5364,11 @@ Process *schedule(Process *p, int calls)
 #endif
 	    erts_smp_runq_unlock(rq);
 	    erl_sys_schedule(runnable);
-	    dt = do_time_read_and_reset();
-	    if (dt) bump_timer(dt);
+	    dt = erts_do_time_read_and_reset();
+	    if (dt) erts_bump_timer(dt);
 #ifdef ERTS_SMP
 	    erts_smp_runq_lock(rq);
-	    erts_smp_atomic32_set(&doing_sys_schedule, 0);
+	    clear_sys_scheduling();
 	    goto continue_check_activities_to_run;
 #else
 	    if (!runnable)
@@ -6931,11 +7081,11 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 	    DeclareTmpHeapNoproc(lhp,3);
 	    ErtsProcLocks rp_locks = (ERTS_PROC_LOCK_LINK
 				      | ERTS_PROC_LOCKS_MSG_SEND);
-	    UseTmpHeapNoproc(3);
 	    rp = erts_pid2proc(NULL, 0, mon->pid, rp_locks);
 	    if (rp == NULL) {
 		goto done;
 	    }
+	    UseTmpHeapNoproc(3);
 	    rmon = erts_remove_monitor(&(rp->monitors),mon->ref);
 	    if (rmon) {
 		erts_destroy_monitor(rmon);
@@ -7476,7 +7626,7 @@ cancel_timer(Process* p)
 #ifdef ERTS_SMP
     erts_cancel_smp_ptimer(p->u.ptimer);
 #else
-    erl_cancel_timer(&p->u.tm);
+    erts_cancel_timer(&p->u.tm);
 #endif
 }
 
@@ -7502,7 +7652,7 @@ set_timer(Process* p, Uint timeout)
 			   (ErlTimeoutProc) timeout_proc,
 			   timeout);
 #else
-    erl_set_timer(&p->u.tm,
+    erts_set_timer(&p->u.tm,
 		  (ErlTimeoutProc) timeout_proc,
 		  NULL,
 		  (void*) p,

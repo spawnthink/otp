@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1996-2010. All Rights Reserved.
+ * Copyright Ericsson AB 1996-2011. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -1091,10 +1091,20 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
 BIF_RETTYPE hibernate_3(BIF_ALIST_3)
 {
     /*
-     * hibernate/3 is implemented as an instruction; therefore
-     * this function will never be called.
+     * hibernate/3 is usually translated to an instruction; therefore
+     * this function is only called from HiPE or when the call could not
+     * be translated.
      */
-    BIF_ERROR(BIF_P, BADARG);
+    Eterm reg[3];
+
+    if (erts_hibernate(BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3, reg)) {
+        /*
+         * If hibernate succeeded, TRAP. The process will be suspended
+         * if status is P_WAITING or continue (if any message was in the queue).
+         */
+        BIF_TRAP_CODE_PTR_(BIF_P, BIF_P->i);
+    }
+    return THE_NON_VALUE;
 }
 
 /**********************************************************************/
@@ -1351,9 +1361,10 @@ BIF_RETTYPE exit_2(BIF_ALIST_2)
 #ifdef ERTS_SMP
 	 if (rp == BIF_P)
 	     rp_locks &= ~ERTS_PROC_LOCK_MAIN;
-	 else
+	 if (rp_locks)
+	     erts_smp_proc_unlock(rp, rp_locks);
+	 if (rp != BIF_P)
 	     erts_smp_proc_dec_refc(rp);
-	 erts_smp_proc_unlock(rp, rp_locks);
 #endif
 	 /*
 	  * We may have exited ourselves and may have to take action.

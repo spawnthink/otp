@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2004-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2004-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -31,7 +31,9 @@
 
 -define(DEFAULT_TIMEOUT, ?t:minutes(10)).
 
--export([all/1, init_per_testcase/2, fin_per_testcase/2]).
+-export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1, 
+	 init_per_group/2,end_per_group/2, 
+	 init_per_testcase/2, fin_per_testcase/2]).
 
 -export([create_join_thread/1,
 	 equal_tids/1,
@@ -49,24 +51,30 @@
 
 -include_lib("test_server/include/test_server.hrl").
 
-tests() ->
-    [create_join_thread,
-     equal_tids,
-     mutex,
-     try_lock_mutex,
-     cond_wait,
-     broadcast,
-     detached_thread,
-     max_threads,
-     tsd,
-     spinlock,
-     rwspinlock,
-     rwmutex,
-     atomic].
+tests() -> 
+    [create_join_thread, equal_tids, mutex, try_lock_mutex,
+     cond_wait, broadcast, detached_thread,
+     max_threads, tsd, spinlock, rwspinlock, rwmutex, atomic].
 
-all(doc) -> [];
-all(suite) -> tests().
+suite() -> [{ct_hooks,[ts_install_cth]}].
 
+all() -> 
+    tests().
+
+groups() -> 
+    [].
+
+init_per_suite(Config) ->
+    Config.
+
+end_per_suite(_Config) ->
+    ok.
+
+init_per_group(_GroupName, Config) ->
+    Config.
+
+end_per_group(_GroupName, Config) ->
+    Config.
 
 %%
 %%
