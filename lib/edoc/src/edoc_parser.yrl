@@ -22,10 +22,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@it.uu.se
-%%
-%% $Id $
-%%
+%% Author contact: carlsson.richard@gmail.com
 %% =====================================================================
 
 Nonterminals
@@ -258,7 +255,7 @@ throws -> etype where_defs:
 %% "%% USA"
 %% "%%"
 %% "%% @private"
-%% "%% @author Richard Carlsson <richardc@it.uu.se>"
+%% "%% @author Richard Carlsson <carlsson.richard@gmail.com>"
 %% "%% ===================================================================="
 %% .
 
@@ -362,10 +359,10 @@ parse_spec(S, L) ->
 		{ok, Spec} ->
 		    Spec;
 		{error, E} ->
-		    throw_error(E, L)
+		    throw_error({parse_spec, E}, L)
 	    end;
 	{error, E, _} ->
-	    throw_error(E, L)
+	    throw_error({parse_spec, E}, L)
     end.
 
 %% ---------------------------------------------------------------------
@@ -458,8 +455,6 @@ parse_throws(S, L) ->
 
 -spec throw_error(term(), erl_scan:line()) -> no_return().
 
-throw_error({L, M, D}, _L0) ->
-    throw({error,L,{format_error,M,D}});
 throw_error({parse_spec, E}, L) ->
     throw_error({"specification", E}, L);
 throw_error({parse_typedef, E}, L) ->
@@ -471,7 +466,4 @@ throw_error({parse_throws, E}, L) ->
 throw_error(parse_param, L) ->
     throw({error, L, "missing parameter name"});
 throw_error({Where, E}, L) when is_list(Where) ->
-    throw({error,L,{"unknown error parsing ~s: ~P.",[Where,E,15]}});
-throw_error(E, L) ->
-    %% Just in case.
-    throw({error,L,{"unknown parse error: ~P.",[E,15]}}).
+    throw({error,L,{"unknown error parsing ~s: ~P.",[Where,E,15]}}).

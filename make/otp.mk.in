@@ -239,7 +239,9 @@ FOP = @FOP@
 
 DOCGEN=$(ERL_TOP)/lib/erl_docgen
 
+ifneq (,$(findstring $(origin SPECS_ESRC),$(DUBIOUS_ORIGINS)))
 SPECS_ESRC = ../../src
+endif
 SPECS_EXTRACTOR=$(DOCGEN)/priv/bin/specs_gen.escript
 # Extract specifications and types from Erlang source files (-spec, -type)
 $(SPECDIR)/specs_%.xml: $(SPECS_ESRC)/%.erl
@@ -267,7 +269,7 @@ $(MAN3DIR)/%.3: %.xml
 	xsltproc --output "$@" --stringparam company "Ericsson AB" --stringparam docgen "$(DOCGEN)" --stringparam gendate "$$date" --stringparam appname "$(APPLICATION)" --stringparam appver "$(VSN)" --xinclude -path $(DOCGEN)/priv/docbuilder_dtd  -path $(DOCGEN)/priv/dtd_man_entities $(DOCGEN)/priv/xsl/db_man.xsl $<
 endif
 
-# left for compatability
+# left for compatibility
 $(MAN4DIR)/%.4: %.xml
 	date=`date +"%B %e %Y"`; \
 	xsltproc --output "$@" --stringparam company "Ericsson AB" --stringparam docgen "$(DOCGEN)" --stringparam gendate "$$date" --stringparam appname "$(APPLICATION)" --stringparam appver "$(VSN)" --xinclude -path $(DOCGEN)/priv/docbuilder_dtd  -path $(DOCGEN)/priv/dtd_man_entities $(DOCGEN)/priv/xsl/db_man.xsl $<
@@ -276,7 +278,7 @@ $(MAN4DIR)/%.5: %.xml
 	date=`date +"%B %e %Y"`; \
 	xsltproc --output "$@" --stringparam company "Ericsson AB" --stringparam docgen "$(DOCGEN)" --stringparam gendate "$$date" --stringparam appname "$(APPLICATION)" --stringparam appver "$(VSN)" --xinclude -path $(DOCGEN)/priv/docbuilder_dtd  -path $(DOCGEN)/priv/dtd_man_entities $(DOCGEN)/priv/xsl/db_man.xsl $<
 
-# left for compatability
+# left for compatibility
 $(MAN6DIR)/%.6: %_app.xml
 	date=`date +"%B %e %Y"`; \
 	xsltproc --output "$@" --stringparam company "Ericsson AB" --stringparam docgen "$(DOCGEN)" --stringparam gendate "$$date" --stringparam appname "$(APPLICATION)" --stringparam appver "$(VSN)" --xinclude -path $(DOCGEN)/priv/docbuilder_dtd  -path $(DOCGEN)/priv/dtd_man_entities $(DOCGEN)/priv/xsl/db_man.xsl $<

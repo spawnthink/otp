@@ -287,10 +287,19 @@ process_schema(Schema) ->
 %% error reason. The error reason may be a list of several errors
 %% or a single error encountered during the processing.
 process_schema(Schema,Options) when is_list(Options) ->
-    S = initiate_state(Options,Schema),
-    process_schema2(xmerl_scan:file(filename:join(S#xsd_state.xsd_base, Schema)),S,Schema);
-process_schema(Schema,State) when is_record(State,xsd_state) ->
-    process_schema2(xmerl_scan:file(filename:join(State#xsd_state.xsd_base, Schema)),State,Schema).
+    State = initiate_state(Options,Schema),
+    process_schema(Schema, State);
+process_schema(Schema, State=#xsd_state{fetch_fun=Fetch})->
+    case Fetch(Schema, State) of
+	{ok,{file,File},_} ->
+	    process_schema2(xmerl_scan:file(File), State, Schema);
+	{ok,{string,Str},_} ->
+	    process_schema2(xmerl_scan:string(Str), State, Schema);
+	{ok,[],_} ->
+	    {error,enoent};
+	Err ->
+	    Err
+    end.
 
 process_schema2(Err={error,_},_,_) ->
     Err;
@@ -319,12 +328,9 @@ process_schemas(Schemas) ->
 %% error reason. The error reason may be a list of several errors
 %% or a single error encountered during the processing.
 process_schemas(Schemas=[{_,Schema}|_],Options) when is_list(Options) ->
-    process_schemas(Schemas,initiate_state(Options,Schema));
+    State = initiate_state(Options,Schema),
+    process_schemas(Schemas, State);
 process_schemas([{_NS,Schema}|Rest],State=#xsd_state{fetch_fun=Fetch}) ->
-%%      case process_external_schema_once(Schema,if_list_to_atom(NS),State) of
-%%   	S when is_record(S,xsd_state) ->
-%%     case process_schema(filename:join([State#xsd_state.xsd_base,Schema]),State) of
-%% 	{ok,S} ->
     Res=
     case Fetch(Schema,State) of
 	{ok,{file,File},_} ->
@@ -345,20 +351,20 @@ process_schemas([{_NS,Schema}|Rest],State=#xsd_state{fetch_fun=Fetch}) ->
 process_schemas([],S) when is_record(S,xsd_state) ->
     {ok,S}.
 
-
 initiate_state(Opts,Schema) ->
     XSDBase = filename:dirname(Schema),
     {{state,S},RestOpts}=new_state(Opts),
     S2 = create_tables(S),
-    initiate_state2(S2#xsd_state{schema_name = Schema,
-				xsd_base = XSDBase,
-				fetch_fun = fun fetch/2},RestOpts).
+    initiate_state2(S2#xsd_state{schema_name = Schema, xsd_base=XSDBase,
+				 fetch_fun = fun fetch/2}, 
+		    RestOpts).
+
 initiate_state2(S,[]) ->
     S;
 initiate_state2(S,[{tab2file,Bool}|T]) ->
     initiate_state2(S#xsd_state{tab2file=Bool},T);
-initiate_state2(S,[{xsdbase,XSDBase}|T]) ->
-    initiate_state2(S#xsd_state{xsd_base=XSDBase},T);
+initiate_state2(S,[{xsdbase, XSDBase}|T]) ->
+    initiate_state2(S#xsd_state{xsd_base=XSDBase, external_xsd_base=true},T);
 initiate_state2(S,[{fetch_fun,FetchFun}|T]) ->
     initiate_state2(S#xsd_state{fetch_fun=FetchFun},T);
 initiate_state2(S,[{fetch_path,FetchPath}|T]) ->
@@ -736,7 +742,7 @@ element_content({IDC,S},El,Env)
 	    {{IDC,IDConstr},S3};
 	Err ->
 	    S3 = acc_errs(S2,{error_path(El,El#xmlElement.name),?MODULE,
-			      {erronous_content_in_identity_constraint,IDC,Err}}),
+			      {erroneous_content_in_identity_constraint,IDC,Err}}),
 	    {{IDC,[]},S3}
     end;
 element_content({selector,S},Sel,_Env) ->
@@ -5232,7 +5238,12 @@ fetch(URI,S) ->
 	    [] -> %% empty systemliteral
 		[];
 	    _ ->
-		filename:join(S#xsd_state.xsd_base, URI)
+		case S#xsd_state.external_xsd_base of
+		    true ->
+			filename:join(S#xsd_state.xsd_base, URI);
+		    false ->
+			filename:join(S#xsd_state.xsd_base, filename:basename(URI))
+		end
 	end,
     Path = path_locate(S#xsd_state.fetch_path, Filename, Fullname),
     ?dbg("fetch(~p) -> {file, ~p}.~n", [URI, Path]),
@@ -5560,7 +5571,7 @@ format_error({incomplete_file,_FileName,_Other}) ->
     "Schema: The file containing a schema state must be produced by xmerl_xsd:state2file/[1,2].";
 format_error({unexpected_content_in_any,A}) ->
     io_lib:format("Schema: The any type is considered to have no content besides annotation. ~p was found.",[A]);
-format_error({erronous_content_in_identity_constraint,IDC,Err}) ->
+format_error({erroneous_content_in_identity_constraint,IDC,Err}) ->
     io_lib:format("Schema: An ~p identity constraint must have one selector and one or more field in content. This case ~p",[IDC,Err]);
 format_error({missing_xpath_attribute,IDCContent}) ->
     io_lib:format("Schema: A ~p in a identity constraint must have a xpath attribute.",[IDCContent]);

@@ -72,6 +72,7 @@
 	 exit_many_many_tables_owner/1]).
 -export([write_concurrency/1, heir/1, give_away/1, setopts/1]).
 -export([bad_table/1, types/1]).
+-export([otp_9423/1]).
 
 -export([init_per_testcase/2, end_per_testcase/2]).
 %% Convenience for manual testing
@@ -143,7 +144,8 @@ all() ->
      otp_8166, exit_large_table_owner,
      exit_many_large_table_owner, exit_many_tables_owner,
      exit_many_many_tables_owner, write_concurrency, heir,
-     give_away, setopts, bad_table, types].
+     give_away, setopts, bad_table, types,
+     otp_9423].
 
 groups() -> 
     [{new, [],
@@ -793,16 +795,16 @@ t_ets_dets(Config, Opts) ->
     ?line true = ets:from_dets(ETab,DTab),
     ?line 3000 = ets:info(ETab,size),
     ?line ets:delete(ETab),
-    ?line {'EXIT',{badarg,[{ets,to_dets,[ETab,DTab]}|_]}} =
+    ?line {'EXIT',{badarg,[{ets,to_dets,[ETab,DTab],_}|_]}} =
 	(catch ets:to_dets(ETab,DTab)),
-    ?line {'EXIT',{badarg,[{ets,from_dets,[ETab,DTab]}|_]}} =
+    ?line {'EXIT',{badarg,[{ets,from_dets,[ETab,DTab],_}|_]}} =
 	(catch ets:from_dets(ETab,DTab)),
     ?line ETab2 = ets_new(x,Opts),
     ?line filltabint(ETab2,3000),
     ?line dets:close(DTab),
-    ?line {'EXIT',{badarg,[{ets,to_dets,[ETab2,DTab]}|_]}} =
+    ?line {'EXIT',{badarg,[{ets,to_dets,[ETab2,DTab],_}|_]}} =
 	(catch ets:to_dets(ETab2,DTab)),
-    ?line {'EXIT',{badarg,[{ets,from_dets,[ETab2,DTab]}|_]}} =
+    ?line {'EXIT',{badarg,[{ets,from_dets,[ETab2,DTab],_}|_]}} =
 	(catch ets:from_dets(ETab2,DTab)),
     ?line ets:delete(ETab2),
     ?line (catch file:delete(Fname)),
@@ -817,6 +819,14 @@ t_delete_all_objects(Config) when is_list(Config) ->
     repeat_for_opts(t_delete_all_objects_do),
     ?line verify_etsmem(EtsMem).
 
+get_kept_objects(T) ->
+    case ets:info(T,stats) of
+	false ->
+	    0;
+	{_,_,_,_,_,_,KO}  ->
+	    KO
+    end.
+
 t_delete_all_objects_do(Opts) ->
     ?line T=ets_new(x,Opts),
     ?line filltabint(T,4000),
@@ -826,10 +836,10 @@ t_delete_all_objects_do(Opts) ->
     ?line true = ets:delete_all_objects(T),
     ?line '$end_of_table' = ets:next(T,O),
     ?line 0 = ets:info(T,size),
-    ?line 4000 = ets:info(T,kept_objects),
+    ?line 4000 = get_kept_objects(T),
     ?line ets:safe_fixtable(T,false),
     ?line 0 = ets:info(T,size),
-    ?line 0 = ets:info(T,kept_objects),
+    ?line 0 = get_kept_objects(T),
     ?line filltabint(T,4000),
     ?line 4000 = ets:info(T,size),
     ?line true = ets:delete_all_objects(T),
@@ -859,10 +869,10 @@ t_delete_object_do(Opts) ->
     ?line ets:delete_object(T,{First, integer_to_list(First)}),
     ?line Next = ets:next(T,First),
     ?line 3999 = ets:info(T,size),
-    ?line 1 = ets:info(T,kept_objects),
+    ?line 1 = get_kept_objects(T),
     ?line ets:safe_fixtable(T,false),
     ?line 3999 = ets:info(T,size),
-    ?line 0 = ets:info(T,kept_objects),
+    ?line 0 = get_kept_objects(T),
     ?line ets:delete(T),
     ?line T1 = ets_new(x,[ordered_set | Opts]),
     ?line filltabint(T1,4000),
@@ -2642,7 +2652,7 @@ maybe_sort(L) when is_list(L) ->
 %maybe_sort({'EXIT',{Reason, [{Module, Function, _}|_]}}) ->
 %    {'EXIT',{Reason, [{Module, Function, '_'}]}};
 maybe_sort({'EXIT',{Reason, List}}) when is_list(List) ->
-    {'EXIT',{Reason, lists:map(fun({Module, Function, _}) ->
+    {'EXIT',{Reason, lists:map(fun({Module, Function, _, _}) ->
 				       {Module, Function, '_'}
 			       end,
 			       List)}};
@@ -2715,7 +2725,8 @@ ordered_do(Opts) ->
 		      9,10,11,12,
 		      1,2,3,4,
 		      17,18,19,20,
-		      13,14,15,16
+		      13,14,15,16,
+		      1 bsl 33
 		     ],
     ?line lists:foreach(fun(X) ->
 			  ets:insert(T,{X,integer_to_list(X)})
@@ -2730,13 +2741,14 @@ ordered_do(Opts) ->
     ?line S2 = L2,
     ?line [{1,"1"}] = ets:slot(T,0),
     ?line [{28,"28"}] = ets:slot(T,27),
+    ?line [{1 bsl 33,_}] = ets:slot(T,28),
     ?line 27 = ets:prev(T,28),
     ?line [{7,"7"}] = ets:slot(T,6),
-    ?line '$end_of_table' = ets:next(T,28),
+    ?line '$end_of_table' = ets:next(T,1 bsl 33),
     ?line [{12,"12"}] = ets:slot(T,11),
-    ?line '$end_of_table' = ets:slot(T,28),
+    ?line '$end_of_table' = ets:slot(T,29),
     ?line [{1,"1"}] = ets:slot(T,0),
-    ?line 28 = ets:prev(T,29),
+    ?line 28 = ets:prev(T,1 bsl 33),
     ?line 1 = ets:next(T,0),
     ?line pick_all_forward(T),
     ?line [{7,"7"}] = ets:slot(T,6),
@@ -4967,7 +4979,7 @@ grow_pseudo_deleted_do(Type) ->
 				     [true]}]),
     Left = Mult*(Mod-1),
     ?line Left = ets:info(T,size),
-    ?line Mult = ets:info(T,kept_objects),
+    ?line Mult = get_kept_objects(T),
     filltabstr(T,Mult),
     spawn_opt(fun()-> ?line true = ets:info(T,fixed),
 		       Self ! start,
@@ -4981,7 +4993,7 @@ grow_pseudo_deleted_do(Type) ->
     ?line true = ets:safe_fixtable(T,false),
     io:format("Unfix table done. ~p nitems=~p\n",[now(),ets:info(T,size)]),
     ?line false = ets:info(T,fixed),
-    ?line 0 = ets:info(T,kept_objects),
+    ?line 0 = get_kept_objects(T),
     ?line done = receive_any(),
     %%verify_table_load(T), % may fail if concurrency is poor (genny)
     ets:delete(T),
@@ -5008,7 +5020,7 @@ shrink_pseudo_deleted_do(Type) ->
 				     [{'>', '$1', Half}],
 				     [true]}]),    
     ?line Half = ets:info(T,size),
-    ?line Half = ets:info(T,kept_objects),
+    ?line Half = get_kept_objects(T),
     spawn_opt(fun()-> ?line true = ets:info(T,fixed),
 		      Self ! start,
 		      io:format("Starting to delete... ~p\n",[now()]),
@@ -5021,7 +5033,7 @@ shrink_pseudo_deleted_do(Type) ->
     ?line true = ets:safe_fixtable(T,false),
     io:format("Unfix table done. ~p nitems=~p\n",[now(),ets:info(T,size)]),
     ?line false = ets:info(T,fixed),
-    ?line 0 = ets:info(T,kept_objects),
+    ?line 0 = get_kept_objects(T),
     ?line done = receive_any(),
     %%verify_table_load(T), % may fail if concurrency is poor (genny)
     ets:delete(T),
@@ -5137,7 +5149,7 @@ smp_fixed_delete_do() ->
     ?line 0 = ets:info(T,size),
     ?line true = ets:info(T,fixed),
     ?line Buckets = num_of_buckets(T),
-    ?line NumOfObjs = ets:info(T,kept_objects),
+    ?line NumOfObjs = get_kept_objects(T),
     ets:safe_fixtable(T,false),
     %% Will fail as unfix does not shrink the table:
     %%?line Mem = ets:info(T,memory),
@@ -5169,7 +5181,7 @@ smp_unfix_fix_do() ->
     Left = NumOfObjs - Deleted,
     ?line Left = ets:info(T,size),
     ?line true = ets:info(T,fixed),
-    ?line Deleted = ets:info(T,kept_objects),
+    ?line Deleted = get_kept_objects(T),
     
     {Child, Mref} = 
 	spawn_opt(fun()-> ?line true = ets:info(T,fixed),
@@ -5186,7 +5198,7 @@ smp_unfix_fix_do() ->
 				       end,
 				       Deleted),
 			  ?line 0 = ets:info(T,size),
-			  ?line true = ets:info(T,kept_objects) >= Left,		      
+			  ?line true = get_kept_objects(T) >= Left,		      
 			  ?line done = receive_any()
 		  end, 
 		  [link, monitor, {scheduler,2}]),
@@ -5199,7 +5211,7 @@ smp_unfix_fix_do() ->
     Child ! done,
     {'DOWN', Mref, process, Child, normal} = receive_any(),
     ?line false = ets:info(T,fixed),
-    ?line 0 = ets:info(T,kept_objects),
+    ?line 0 = get_kept_objects(T),
     %%verify_table_load(T),
     ets:delete(T),
     process_flag(scheduler,0).
@@ -5237,7 +5249,7 @@ otp_8166_do(WC) ->
     ZombieCrPid ! quit,    
     {'DOWN', ZombieCrMref, process, ZombieCrPid, normal} = receive_any(),
     ?line false = ets:info(T,fixed),
-    ?line 0 = ets:info(T,kept_objects),
+    ?line 0 = get_kept_objects(T),
     %%verify_table_load(T),
     ets:delete(T),
     process_flag(scheduler,0).
@@ -5304,7 +5316,7 @@ otp_8166_zombie_creator(T,Deleted) ->
 
 verify_table_load(T) ->
     ?line Stats = ets:info(T,stats),
-    ?line {Buckets,AvgLen,StdDev,ExpSD,_MinLen,_MaxLen} = Stats,
+    ?line {Buckets,AvgLen,StdDev,ExpSD,_MinLen,_MaxLen,_} = Stats,
     ?line ok = if
 		   AvgLen > 7 ->
 		       io:format("Table overloaded: Stats=~p\n~p\n",
@@ -5420,7 +5432,39 @@ types_do(Opts) ->
     ?line verify_etsmem(EtsMem).
 
 
-
+otp_9423(doc) -> ["vm-deadlock caused by race between ets:delete and others on write_concurrency table"];
+otp_9423(Config) when is_list(Config) ->
+    InitF = fun(_) -> {0,0} end,
+    ExecF = fun({S,F}) -> 
+		    receive 
+			stop -> 
+			    io:format("~p got stop\n", [self()]),
+			    [end_of_work | {"Succeded=",S,"Failed=",F}]
+		    after 0 ->
+			    %%io:format("~p (~p) doing lookup\n", [self(), {S,F}]),
+			    try ets:lookup(otp_9423, key) of
+				[] -> {S+1,F}
+			    catch
+				error:badarg -> {S,F+1}
+			    end
+		    end
+	    end,
+    FiniF = fun(R) -> R end,
+    case run_workers(InitF, ExecF, FiniF, infinite, 1) of
+	Pids when is_list(Pids) ->
+	    %%[P ! start || P <- Pids],
+	    repeat(fun() -> ets:new(otp_9423, [named_table, public, {write_concurrency,true}]),
+			    ets:delete(otp_9423)
+		   end, 10000),
+	    [P ! stop || P <- Pids],
+	    wait_pids(Pids),
+	    ok;
+	
+	Skipped -> Skipped
+    end.
+	    
+    
+    
 
 %
 % Utility functions:
@@ -5434,21 +5478,30 @@ add_lists([E1|T1], [E2|T2], Acc) ->
     add_lists(T1, T2, [E1+E2 | Acc]).    
 
 run_workers(InitF,ExecF,FiniF,Laps) ->
+    run_workers(InitF,ExecF,FiniF,Laps, 0).
+run_workers(InitF,ExecF,FiniF,Laps, Exclude) ->
     case erlang:system_info(smp_support) of
 	true ->
-	    run_workers_do(InitF,ExecF,FiniF,Laps);
+	    run_workers_do(InitF,ExecF,FiniF,Laps, Exclude);
 	false ->
 	    {skipped,"No smp support"}
     end.
-   
+
 run_workers_do(InitF,ExecF,FiniF,Laps) ->
-    NumOfProcs = erlang:system_info(schedulers),
+    run_workers_do(InitF,ExecF,FiniF,Laps, 0).
+run_workers_do(InitF,ExecF,FiniF,Laps, Exclude) ->
+    ?line NumOfProcs = case erlang:system_info(schedulers) of
+			   N when (N > Exclude) -> N - Exclude
+		       end,
     io:format("smp starting ~p workers\n",[NumOfProcs]),
     Seeds = [{ProcN,random:uniform(9999)} || ProcN <- lists:seq(1,NumOfProcs)],
     Parent = self(),
     Pids = [spawn_link(fun()-> worker(Seed,InitF,ExecF,FiniF,Laps,Parent,NumOfProcs) end)
 	    || Seed <- Seeds],
-    wait_pids(Pids).
+    case Laps of
+	infinite -> Pids;
+	_ -> wait_pids(Pids)
+    end.
 	    
 worker({ProcN,Seed}, InitF, ExecF, FiniF, Laps, Parent, NumOfProcs) ->
     io:format("smp worker ~p, seed=~p~n",[self(),Seed]),
@@ -5463,6 +5516,8 @@ worker_loop(0, _, State) ->
     State;
 worker_loop(_, _, [end_of_work|State]) ->
     State;
+worker_loop(infinite, ExecF, State) ->
+    worker_loop(infinite,ExecF,ExecF(State));
 worker_loop(N, ExecF, State) ->
     worker_loop(N-1,ExecF,ExecF(State)).
     
@@ -5517,20 +5572,21 @@ etsmem() ->
      case erlang:system_info({allocator,ets_alloc}) of
 	 false -> undefined;
 	 MemInfo ->
-	     MSBCS = lists:foldl(
-		       fun ({instance, _, L}, Acc) ->
-			       {value,{_,MBCS}} = lists:keysearch(mbcs, 1, L),
-			       {value,{_,SBCS}} = lists:keysearch(sbcs, 1, L),
-			       [MBCS,SBCS | Acc]
-		       end,
-		       [],
-		       MemInfo),
+	     CS = lists:foldl(
+		    fun ({instance, _, L}, Acc) ->
+			    {value,{_,SBMBCS}} = lists:keysearch(sbmbcs, 1, L),
+			    {value,{_,MBCS}} = lists:keysearch(mbcs, 1, L),
+			    {value,{_,SBCS}} = lists:keysearch(sbcs, 1, L),
+			    [SBMBCS,MBCS,SBCS | Acc]
+		    end,
+		    [],
+		    MemInfo),
 	     lists:foldl(
 	       fun(L, {Bl0,BlSz0}) ->
 		       {value,{_,Bl,_,_}} = lists:keysearch(blocks, 1, L),
 		       {value,{_,BlSz,_,_}} = lists:keysearch(blocks_size, 1, L),
 		       {Bl0+Bl,BlSz0+BlSz}
-	       end, {0,0}, MSBCS)
+	       end, {0,0}, CS)
      end},
      {Mem,AllTabs}.
 
@@ -5872,7 +5928,7 @@ very_big_num(0, Result) ->
     ?line Result.
 
 make_port() ->
-    ?line open_port({spawn, efile}, [eof]).
+    ?line open_port({spawn, "efile"}, [eof]).
 
 make_pid() ->
     ?line spawn_link(?MODULE, sleeper, []).

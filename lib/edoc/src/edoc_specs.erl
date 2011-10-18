@@ -27,7 +27,6 @@
 -include("edoc.hrl").
 -include("edoc_types.hrl").
 
--type proplist() :: [proplists:property()].
 -type syntaxTree() :: erl_syntax:syntaxTree().
 
 -define(TOP_TYPE, term).
@@ -87,8 +86,9 @@ dummy_spec(Form) ->
     #tag{name = spec, line = element(2, hd(TypeSpecs)),
          origin = code, data = S}.
 
--spec docs(Forms::[syntaxTree()], CommentFun) -> dict() when
-      CommentFun :: fun(([syntaxTree()], Line :: term()) -> #tag{}).
+-spec docs(Forms::[syntaxTree()],
+           CommentFun :: fun( ([syntaxTree()], Line :: term()) -> #tag{} ))
+          -> dict().
 
 %% @doc Find comments after -type/-opaque declarations.
 %% Postcomments "inside" the type are skipped.
@@ -98,7 +98,7 @@ docs(Forms, CommentFun) ->
 -type entry() :: #entry{}.
 -type module_info() :: #module{}.
 -type entries() :: [entry()].
--spec add_data(Entries::entries(), Options::proplist(),
+-spec add_data(Entries::entries(), Options::proplists:proplist(),
                File::file:filename(), Module::module_info()) -> entries().
 
 %% @doc Create tags a la EDoc for Erlang specifications and types.
@@ -305,8 +305,6 @@ d2e({ann_type,_,[V, T0]}) ->
     %% layout module.
     T = d2e(T0),
     ?add_t_ann(T, element(3, V));
-d2e({type,_,no_return,[]}) ->
-    #t_type{name = #t_name{name = none}};
 d2e({remote_type,_,[{atom,_,M},{atom,_,F},Ts0]}) ->
     Ts = d2e(Ts0),
     typevar_anno(#t_type{name = #t_name{module = M, name = F}, args = Ts}, Ts);

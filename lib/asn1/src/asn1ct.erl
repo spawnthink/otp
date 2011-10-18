@@ -39,13 +39,17 @@
 	 add_tobe_refed_func/1,add_generated_refed_func/1,
 	 maybe_rename_function/3,latest_sindex/0,current_sindex/0,
 	 set_current_sindex/1,next_sindex/0,maybe_saved_sindex/2,
-	 parse_and_save/2,verbose/3,warning/3,error/3]).
+	 parse_and_save/2,verbose/3,warning/3,warning/4,error/3]).
 
 -include("asn1_records.hrl").
 -include_lib("stdlib/include/erl_compile.hrl").
 -include_lib("kernel/include/file.hrl").
 
 -import(asn1ct_gen_ber_bin_v2,[encode_tag_val/3,decode_class/1]).
+
+-ifndef(vsn).
+-define(vsn,"0.0.1").
+-endif.
 
 -define(unique_names,0).
 -define(dupl_uniquedefs,1).
@@ -81,6 +85,12 @@ compile(File) ->
     compile(File,[]).
 
 compile(File,Options) when is_list(Options) ->
+    case lists:member(driver, Options) of %% remove me in R16A!
+	true ->
+	    io:format("Warning: driver option is obsolete and will be removed in R16A, use nif instead!");
+	false ->
+	    ok
+    end,
     Options1 = optimize_ber_bin(Options),
     Options2 = includes(File,Options1),
     Includes=[I||{i,I}<-Options2],
@@ -825,10 +835,13 @@ generate({true,{M,_Module,GenTOrV}},OutFile,EncodingRule,Options) ->
     case catch specialized_decode_prepare(EncodingRule,M,GenTOrV,Options) of
 	{error, enoent} -> ok;
 	{error, Reason} -> warning("Error in configuration "
-				   "file: ~n~p~n",[Reason],Options);
+				   "file: ~n~p~n",[Reason],Options,
+				   "Error in configuration file");
 	{'EXIT',Reason} -> warning("Internal error when "
 				   "analyzing configuration "
-				   "file: ~n~p~n",[Reason],Options);
+				   "file: ~n~p~n",[Reason],Options,
+				   "Internal error when "
+				   "analyzing configuration");
 	_ -> ok
     end,
 
@@ -1082,7 +1095,7 @@ get_runtime_mod(Options) ->
 	    ber_bin_v2 -> ["asn1rt_ber_bin_v2.erl"];
 	    uper_bin -> ["asn1rt_uper_bin.erl"]
 	end,
-    RtMod1++["asn1rt_check.erl","asn1rt_driver_handler.erl","asn1rt.erl"].
+    RtMod1++["asn1rt_check.erl","asn1rt.erl"].
     
 
 erl_compile(OutFile,Options) ->
@@ -2524,14 +2537,14 @@ type_check(#'Externaltypereference'{}) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Report functions.
 %%
-%% Errors messages are controlled with the 'errors' compiler option
+%% Error messages are controlled with the 'errors' compiler option
 %% Warning messages are controlled with the 'warnings' compiler option
 %% Verbose messages are controlled with the 'verbose' compiler option
 
 error(Format, Args, S) ->
     case is_error(S) of
 	true ->
-	    io:format("Error: " ++ Format, Args);
+	    io:format(Format, Args);
 	false ->
 	    ok
     end.
@@ -2541,6 +2554,17 @@ warning(Format, Args, S) ->
 	true ->
 	    io:format("Warning: " ++ Format, Args);
 	false ->
+	    ok
+    end.
+
+warning(Format, Args, S, Reason) ->
+    case {is_werr(S), is_error(S), is_warning(S)} of
+	{true, true, _} ->
+	    io:format(Format, Args),
+	    throw({error, Reason});
+	{false, _, true} ->
+	    io:format(Format, Args);
+	_ ->
 	    ok
     end.
 
@@ -2566,3 +2590,8 @@ is_verbose(S) when is_record(S, state) ->
     is_verbose(S#state.options);
 is_verbose(O) ->
     lists:member(verbose, O).
+
+is_werr(S) when is_record(S, state) ->
+    is_werr(S#state.options);
+is_werr(O) ->
+    lists:member(warnings_as_errors, O).

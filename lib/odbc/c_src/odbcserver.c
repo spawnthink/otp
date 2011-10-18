@@ -90,7 +90,7 @@
    Datatype -  USER_INT | USER_SMALL_INT | {USER_DECIMAL, Precision, Scale} |
    {USER_NMERIC, Precision, Scale} | {USER_CHAR, Max} | {USER_VARCHAR, Max} |
    {USER_WVARCHAR, Max} | {USER_FLOAT, Precision} | USER_REAL | USER_DOUBLE |
-   USER_TIMESTAMP
+   USER_TIMESTAMP | {USER_WLONGVARCHAR, Max}
    Scale - integer
    Precision - integer
    Max - integer
@@ -173,7 +173,7 @@ static db_result_msg encode_row_count(SQLINTEGER num_of_rows,
 				      db_state *state);
 static void encode_column_dyn(db_column column, int column_nr,
 			      db_state *state);
-static void encode_data_type(SQLINTEGER sql_type, SQLINTEGER size,
+static void encode_data_type(SQLSMALLINT sql_type, SQLINTEGER size,
 			     SQLSMALLINT decimal_digits, db_state *state);
 static Boolean decode_params(db_state *state, byte *buffer, int *index, param_array **params,
 			  int i, int j);
@@ -221,7 +221,7 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
 			      int num_param_values, db_state* state);
 
 static void init_param_statement(int cols,
-				 int num_param_values, 
+				 SQLLEN num_param_values,
 				 db_state *state,
 				 param_status *status);
 
@@ -435,7 +435,7 @@ static db_result_msg db_connect(byte *args, db_state *state)
     diagnos diagnos;
     byte *connStrIn; 
     int erl_auto_commit_mode, erl_trace_driver,
-	use_srollable_cursors, tuple_row_state, binary_strings;
+	    use_srollable_cursors, tuple_row_state, binary_strings;
   
     erl_auto_commit_mode = args[0];
     erl_trace_driver = args[1];
@@ -757,8 +757,9 @@ static db_result_msg db_select(byte *args, db_state *state)
 static db_result_msg db_param_query(byte *buffer, db_state *state)
 {
     byte *sql; 
-    db_result_msg msg; 
-    int i, num_param_values, ver = 0,
+    db_result_msg msg;
+    SQLLEN num_param_values;
+    int i, ver = 0,
        erl_type = 0, index = 0, size = 0, cols = 0;
     long long_num_param_values;  
     param_status param_status;
@@ -771,6 +772,7 @@ static db_result_msg db_param_query(byte *buffer, db_state *state)
     }
     associated_result_set(state) = FALSE;
     param_query(state) = TRUE;
+    out_params(state) = FALSE;
 
     msg = encode_empty_message();
 
@@ -785,7 +787,7 @@ static db_result_msg db_param_query(byte *buffer, db_state *state)
 
     ei_decode_long(buffer, &index, &long_num_param_values);
 
-    num_param_values = (int)long_num_param_values;
+    num_param_values = (SQLLEN)long_num_param_values;
     ei_decode_list_header(buffer, &index, &cols);
 
     
@@ -1002,12 +1004,16 @@ static db_result_msg encode_result(db_state *state)
     db_result_msg msg;
     int elements, update, num_of_rows = 0;
     char *atom;
+    diagnos diagnos;
 
     msg = encode_empty_message();
     
     if(!sql_success(SQLNumResultCols(statement_handle(state), 
   				     &num_of_columns))) { 
-  	DO_EXIT(EXIT_COLS); 
+	    diagnos =  get_diagnos(SQL_HANDLE_STMT, statement_handle(state));
+	    msg = encode_error_message(diagnos.error_msg);
+	    clean_state(state);
+	    return msg;
     } 
     
     if (num_of_columns == 0) { 
@@ -1021,7 +1027,10 @@ static db_result_msg encode_result(db_state *state)
     }
     
     if(!sql_success(SQLRowCount(statement_handle(state), &RowCountPtr))) { 
-	DO_EXIT(EXIT_ROWS); 
+	    diagnos =  get_diagnos(SQL_HANDLE_STMT, statement_handle(state));
+	    msg = encode_error_message(diagnos.error_msg);
+	    clean_state(state);
+	    return msg;
     }
 
     if(param_query(state) && update) {
@@ -1220,7 +1229,7 @@ static db_result_msg encode_column_name_list(SQLSMALLINT num_of_columns,
 				       &nullable)))
 	    DO_EXIT(EXIT_DESC);
 
-	if(sql_type == SQL_LONGVARCHAR || sql_type == SQL_LONGVARBINARY)
+	if(sql_type == SQL_LONGVARCHAR || sql_type == SQL_LONGVARBINARY || sql_type == SQL_WLONGVARCHAR)
 	    size = MAXCOLSIZE;
     
 	(columns(state)[i]).type.decimal_digits = dec_digits;
@@ -1452,7 +1461,7 @@ static void encode_column_dyn(db_column column, int column_nr,
     } 
 }
 
-static void encode_data_type(SQLINTEGER sql_type, SQLINTEGER size,
+static void encode_data_type(SQLSMALLINT sql_type, SQLINTEGER size,
 			     SQLSMALLINT decimal_digits, db_state *state)
 {
     switch(sql_type) {
@@ -1528,6 +1537,11 @@ static void encode_data_type(SQLINTEGER sql_type, SQLINTEGER size,
 	break;
     case SQL_LONGVARCHAR:
 	ei_x_encode_atom(&dynamic_buffer(state), "SQL_LONGVARCHAR");
+	break;
+    case SQL_WLONGVARCHAR:
+	ei_x_encode_tuple_header(&dynamic_buffer(state), 2);
+	ei_x_encode_atom(&dynamic_buffer(state), "sql_wlongvarchar");
+	ei_x_encode_long(&dynamic_buffer(state), size);
 	break;
     case SQL_VARBINARY:
 	ei_x_encode_atom(&dynamic_buffer(state), "SQL_VARBINARY");
@@ -2007,7 +2021,7 @@ static void init_driver(int erl_auto_commit_mode, int erl_trace_driver,
 			db_state *state)
 {
   
-    int auto_commit_mode, trace_driver;
+    SQLLEN auto_commit_mode, trace_driver;
   
     if(erl_auto_commit_mode == ON) {
 	auto_commit_mode = SQL_AUTOCOMMIT_ON;
@@ -2057,7 +2071,7 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
     
     ei_decode_long(buffer, index, &user_type);
 
-    params->type.strlen_or_indptr = (SQLINTEGER)NULL;
+    params->type.strlen_or_indptr = (SQLLEN)NULL;
     params->type.strlen_or_indptr_array = NULL;
     params->type.decimal_digits = (SQLINTEGER)0;
   
@@ -2131,10 +2145,14 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
 	break;
     case USER_WCHAR:
     case USER_WVARCHAR:
-        if(user_type == USER_WCHAR) {
-            params->type.sql = SQL_WCHAR;
-	} else {
-            params->type.sql = SQL_WVARCHAR;
+    case USER_WLONGVARCHAR:
+	switch (user_type) {
+	    case USER_WCHAR:
+		params->type.sql = SQL_WCHAR; break;
+	    case USER_WVARCHAR:
+		params->type.sql = SQL_WVARCHAR; break;
+	    default:
+		params->type.sql = SQL_WLONGVARCHAR; break;
 	}
 	ei_decode_long(buffer, index, &length);
 	/* Max string length + string terminator */
@@ -2206,7 +2224,7 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
 
 }
 
-static void init_param_statement(int cols, int num_param_values, 
+static void init_param_statement(int cols, SQLLEN num_param_values,
 				 db_state *state, param_status *status)
 {
     int i;
@@ -2234,11 +2252,11 @@ static void init_param_statement(int cols, int num_param_values,
 	DO_EXIT(EXIT_PARAM_ARRAY);
     }
 
-    /* Note the (int *) cast is correct as the API function SQLSetStmtAttr
+    /* Note the (SQLLEN *) cast is correct as the API function SQLSetStmtAttr
        takes either an interger or a pointer depending on the attribute */
     if(!sql_success(SQLSetStmtAttr(statement_handle(state),
 				   SQL_ATTR_PARAMSET_SIZE,
-				   (int *)num_param_values,
+				   (SQLLEN *)num_param_values,
 				   0))) {
 	DO_EXIT(EXIT_PARAM_ARRAY);
     }
@@ -2300,6 +2318,7 @@ static db_result_msg map_sql_2_c_column(db_column* column)
         break;
     case SQL_WCHAR:
     case SQL_WVARCHAR:
+    case SQL_WLONGVARCHAR:
         column -> type.len = (column -> type.col_size + 1)*sizeof(SQLWCHAR); 
         column -> type.c = SQL_C_WCHAR;
         column -> type.strlen_or_indptr = SQL_NTS;
@@ -2308,21 +2327,21 @@ static db_result_msg map_sql_2_c_column(db_column* column)
     case SQL_DECIMAL:
 	map_dec_num_2_c_column(&(column -> type), column -> type.col_size,
 			       column -> type.decimal_digits);
-	column -> type.strlen_or_indptr = (SQLINTEGER)NULL;
+	column -> type.strlen_or_indptr = (SQLLEN)NULL;
 	break;
     case SQL_TINYINT:
     case SQL_INTEGER:
     case SQL_SMALLINT:
 	column -> type.len = sizeof(SQLINTEGER);
 	column -> type.c = SQL_C_SLONG;
-	column -> type.strlen_or_indptr = (SQLINTEGER)NULL;
+	column -> type.strlen_or_indptr = (SQLLEN)NULL;
 	break;
     case SQL_REAL:
     case SQL_FLOAT:
     case SQL_DOUBLE:
 	column -> type.len = sizeof(double);
 	column -> type.c = SQL_C_DOUBLE;
-	column -> type.strlen_or_indptr = (SQLINTEGER)NULL;
+	column -> type.strlen_or_indptr = (SQLLEN)NULL;
 	break;
     case SQL_TYPE_DATE:
     case SQL_TYPE_TIME:
@@ -2334,17 +2353,17 @@ static db_result_msg map_sql_2_c_column(db_column* column)
     case SQL_TYPE_TIMESTAMP:
       column -> type.len = sizeof(TIMESTAMP_STRUCT);
       column -> type.c = SQL_C_TYPE_TIMESTAMP;
-      column -> type.strlen_or_indptr = (SQLINTEGER)NULL;
+      column -> type.strlen_or_indptr = (SQLLEN)NULL;
       break;
     case SQL_BIGINT:
 	column -> type.len = DEC_NUM_LENGTH;
 	column -> type.c = SQL_C_CHAR;
-	column -> type.strlen_or_indptr = (SQLINTEGER)NULL;
+	column -> type.strlen_or_indptr = (SQLLEN)NULL;
 	break;
     case SQL_BIT:
 	column -> type.len = sizeof(byte);
 	column -> type.c = SQL_C_BIT;
-	column -> type.strlen_or_indptr = (SQLINTEGER)NULL;
+	column -> type.strlen_or_indptr = (SQLLEN)NULL;
 	break;
     case SQL_UNKNOWN_TYPE:
 	msg = encode_error_message("Unknown column type");

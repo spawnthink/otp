@@ -40,7 +40,6 @@ RELSYSDIR = $(RELEASE_PATH)/lib/common_test-$(VSN)
 # ----------------------------------------------------
 
 MODULES= \
-	ct_line \
 	ct \
 	ct_logs \
 	ct_framework \
@@ -69,9 +68,11 @@ MODULES= \
 	ct_config_xml \
 	ct_slave \
         ct_hooks\
-        ct_hooks_lock
+        ct_hooks_lock\
+	cth_log_redirect
 
 TARGET_MODULES= $(MODULES:%=$(EBIN)/%)
+BEAM_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 ERL_FILES= $(MODULES:=.erl)
 HRL_FILES = \
@@ -97,7 +98,7 @@ ERL_COMPILE_FLAGS += -pa ../ebin -I../include -I $(ERL_TOP)/lib/snmp/include/ \
 # ----------------------------------------------------
 TARGET_FILES = \
 	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
-	$(MODULES:%=$(EBIN)/%.$(EMULATOR)) \
+	$(BEAM_FILES) \
 	$(APP_TARGET) $(APPUP_TARGET)
 
 APP_FILE= common_test.app

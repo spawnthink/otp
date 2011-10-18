@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2002-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2002-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -72,6 +72,7 @@
 -define(USER_WCHAR, 12).
 -define(USER_WVARCHAR, 13).
 -define(USER_TIMESTAMP, 14).
+-define(USER_WLONGVARCHAR, 15).
 
 %% INPUT & OUTPUT TYPE 
 -define(IN, 0).

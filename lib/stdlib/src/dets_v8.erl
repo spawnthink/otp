@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2001-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2001-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -163,7 +163,7 @@
 %% The 8(c) version uses a different hashing algorithm, erlang:phash
 %% (former versions use erlang:hash).
 %% Version 8(b) files are only converted to version 8(c) if repair is
-%% done, so we need compatability with 8(b) for a _long_ time.
+%% done, so we need compatibility with 8(b) for a _long_ time.
 %%
 %% There are known bugs due to the fact that keys and objects are
 %% sometimes compared (==) and sometimes matched (=:=). The version

@@ -94,8 +94,6 @@
 	 multi_call/2, multi_call/3, multi_call/4,
 	 enter_loop/3, enter_loop/4, enter_loop/5, wake_hib/5]).
 
--export([behaviour_info/1]).
-
 %% System exports
 -export([system_continue/3,
 	 system_terminate/4,
@@ -111,13 +109,32 @@
 %%%  API
 %%%=========================================================================
 
--spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
-
-behaviour_info(callbacks) ->
-    [{init,1},{handle_call,3},{handle_cast,2},{handle_info,2},
-     {terminate,2},{code_change,3}];
-behaviour_info(_Other) ->
-    undefined.
+-callback init(Args :: term()) ->
+    {ok, State :: term()} | {ok, State :: term(), timeout() | hibernate} |
+    {stop, Reason :: term()} | ignore.
+-callback handle_call(Request :: term(), From :: {pid(), Tag :: term()},
+                      State :: term()) ->
+    {reply, Reply :: term(), NewState :: term()} |
+    {reply, Reply :: term(), NewState :: term(), timeout() | hibernate} |
+    {noreply, NewState :: term()} |
+    {noreply, NewState :: term(), timeout() | hibernate} |
+    {stop, Reason :: term(), Reply :: term(), NewState :: term()} |
+    {stop, Reason :: term(), NewState :: term()}.
+-callback handle_cast(Request :: term(), State :: term()) ->
+    {noreply, NewState :: term()} |
+    {noreply, NewState :: term(), timeout() | hibernate} |
+    {stop, Reason :: term(), NewState :: term()}.
+-callback handle_info(Info :: timeout() | term(), State :: term()) ->
+    {noreply, NewState :: term()} |
+    {noreply, NewState :: term(), timeout() | hibernate} |
+    {stop, Reason :: term(), NewState :: term()}.
+-callback terminate(Reason :: (normal | shutdown | {shutdown, term()} |
+                               term()),
+                    State :: term()) ->
+    term().
+-callback code_change(OldVsn :: (term() | {down, term()}), State :: term(),
+                      Extra :: term()) ->
+    {ok, NewState :: term()}.
 
 %%%  -----------------------------------------------------------------
 %%% Starts a generic server.
@@ -729,16 +746,16 @@ error_info(_Reason, application_controller, _Msg, _State, _Debug) ->
 error_info(Reason, Name, Msg, State, Debug) ->
     Reason1 = 
 	case Reason of
-	    {undef,[{M,F,A}|MFAs]} ->
+	    {undef,[{M,F,A,L}|MFAs]} ->
 		case code:is_loaded(M) of
 		    false ->
-			{'module could not be loaded',[{M,F,A}|MFAs]};
+			{'module could not be loaded',[{M,F,A,L}|MFAs]};
 		    _ ->
 			case erlang:function_exported(M, F, length(A)) of
 			    true ->
 				Reason;
 			    false ->
-				{'function not exported',[{M,F,A}|MFAs]}
+				{'function not exported',[{M,F,A,L}|MFAs]}
 			end
 		end;
 	    _ ->

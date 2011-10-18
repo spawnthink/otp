@@ -4,7 +4,7 @@
 <chapter>
   <header>
     <copyright>
-      <year>2002</year><year>2010</year>
+      <year>2002</year><year>2011</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -203,6 +203,10 @@ when p >= 16 </cell>
       <row>
         <cell align="left" valign="middle">SQL_LONGVARCHAR </cell>
 	<cell align="left" valign="middle">String | Binary (configurable)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">SQL_WLONGVARCHAR(size) </cell>
+        <cell align="left" valign="middle">Unicode binary encoded as UTF16 little endian.</cell>
       </row>
       <row>
         <cell align="left" valign="middle">SQL_BINARY</cell>

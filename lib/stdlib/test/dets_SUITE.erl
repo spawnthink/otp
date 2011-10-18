@@ -1516,7 +1516,7 @@ repair(Config, V) ->
     if 
         V =:= 8 ->
             %% first estimated number of objects is wrong, repair once more
-            ?line {ok, Fd} = file:open(Fname, read_write),
+            ?line {ok, Fd} = file:open(Fname, [read,write]),
             NoPos = HeadSize - 8,  % no_objects
             ?line file:pwrite(Fd, NoPos, <<0:32>>), % NoItems
             ok = file:close(Fd),
@@ -1568,8 +1568,10 @@ repair(Config, V) ->
     ?line FileSize = dets:info(TabRef, memory),
     ?line ok = dets:close(TabRef),
     crash(Fname, FileSize+20),
-    ?line {error, {bad_freelists, Fname}} = 
+    %% Used to return bad_freelists, but that changed in OTP-9622
+    ?line {ok, TabRef} =
 	dets:open_file(TabRef, [{file,Fname},{version,V}]),
+    ?line ok = dets:close(TabRef),
     ?line file:delete(Fname),
 
     %% File not closed, opening with read and read_write access tried.
@@ -1857,9 +1859,9 @@ fixtable(Config, Version) when is_list(Config) ->
     ?line {ok, _} = dets:open_file(T, Args),
 
     %% badarg
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} =
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:safe_fixtable(no_table,true)),
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[T,undefined]}|_]}} =
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[T,undefined],_}|_]}} =
 	(catch dets:safe_fixtable(T,undefined)),
 
     %% The table is not allowed to grow while the elements are inserted:
@@ -1940,21 +1942,21 @@ match(Config, Version) ->
 
     %% match, badarg
     MSpec = [{'_',[],['$_']}],
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:match(no_table, '_')),
-    ?line {'EXIT', {badarg, [{dets,match,[T,'_',not_a_number]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,match,[T,'_',not_a_number],_}|_]}} =
 	(catch dets:match(T, '_', not_a_number)),
     ?line {EC1, _} = dets:select(T, MSpec, 1),
-    ?line {'EXIT', {badarg, [{dets,match,[EC1]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,match,[EC1],_}|_]}} =
 	(catch dets:match(EC1)),
 
     %% match_object, badarg
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:match_object(no_table, '_')),
-    ?line {'EXIT', {badarg, [{dets,match_object,[T,'_',not_a_number]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,match_object,[T,'_',not_a_number],_}|_]}} =
 	(catch dets:match_object(T, '_', not_a_number)),
     ?line {EC2, _} = dets:select(T, MSpec, 1),
-    ?line {'EXIT', {badarg, [{dets,match_object,[EC2]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,match_object,[EC2],_}|_]}} =
 	(catch dets:match_object(EC2)),
 
     dets:safe_fixtable(T, true),
@@ -2118,16 +2120,16 @@ select(Config, Version) ->
 
     %% badarg
     MSpec = [{'_',[],['$_']}],
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:select(no_table, MSpec)),
-    ?line {'EXIT', {badarg, [{dets,select,[T,<<17>>]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,select,[T,<<17>>],_}|_]}} =
 	(catch dets:select(T, <<17>>)),
-    ?line {'EXIT', {badarg, [{dets,select,[T,[]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,select,[T,[]],_}|_]}} =
 	(catch dets:select(T, [])),
-    ?line {'EXIT', {badarg, [{dets,select,[T,MSpec,not_a_number]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,select,[T,MSpec,not_a_number],_}|_]}} =
 	(catch dets:select(T, MSpec, not_a_number)),
     ?line {EC, _} = dets:match(T, '_', 1),
-    ?line {'EXIT', {badarg, [{dets,select,[EC]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,select,[EC],_}|_]}} =
 	(catch dets:select(EC)),
 
     AllSpec = [{'_',[],['$_']}],
@@ -2210,7 +2212,7 @@ update_counter(Config) when is_list(Config) ->
     ?line file:delete(Fname),
     P0 = pps(),
 
-    ?line {'EXIT', {badarg, [{dets,update_counter,[no_table,1,1]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,update_counter,[no_table,1,1],_}|_]}} =
 	(catch dets:update_counter(no_table, 1, 1)),
 
     Args = [{file,Fname},{keypos,2}],
@@ -2254,65 +2256,66 @@ badarg(Config) when is_list(Config) ->
     %% badargs are tested in match, select and fixtable too.
 
     %% open
-    ?line {'EXIT', {badarg, [{dets,open_file,[{a,tuple},[]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,open_file,[{a,tuple},[]],_}|_]}} =
 	(catch dets:open_file({a,tuple},[])),
-    ?line {'EXIT', {badarg, [{dets,open_file,[{a,tuple}]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,open_file,[{a,tuple}],_}|_]}} =
 	(catch dets:open_file({a,tuple})),
-    ?line {'EXIT', {badarg, [{dets,open_file,[file,[foo]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,open_file,[file,[foo]],_}|_]}} =
 	(catch dets:open_file(file,[foo])),
-    ?line {'EXIT', {badarg,[{dets,open_file,[{hej,san},[{type,set}|3]]}|_]}} =
+    ?line {'EXIT', {badarg,[{dets,open_file,
+			     [{hej,san},[{type,set}|3]],_}|_]}} =
 	(catch dets:open_file({hej,san},[{type,set}|3])),
 
     %% insert
-    ?line {'EXIT', {badarg, [{dets,insert,[no_table,{1,2}]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,insert,[no_table,{1,2}],_}|_]}} =
 	(catch dets:insert(no_table, {1,2})),
-    ?line {'EXIT', {badarg, [{dets,insert,[no_table,[{1,2}]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,insert,[no_table,[{1,2}]],_}|_]}} =
 	(catch dets:insert(no_table, [{1,2}])),
-    ?line {'EXIT', {badarg, [{dets,insert,[T,{1,2}]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,insert,[T,{1,2}],_}|_]}} =
 	(catch dets:insert(T, {1,2})),
-    ?line {'EXIT', {badarg, [{dets,insert,[T,[{1,2}]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,insert,[T,[{1,2}]],_}|_]}} =
 	(catch dets:insert(T, [{1,2}])),
-    ?line {'EXIT', {badarg, [{dets,insert,[T,[{1,2,3}|3]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,insert,[T,[{1,2,3}|3]],_}|_]}} =
 	      (catch dets:insert(T, [{1,2,3} | 3])),
 
     %% lookup{_keys}
-    ?line {'EXIT', {badarg, [{dets,lookup_keys,[badarg,[]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,lookup_keys,[badarg,[]],_}|_]}} =
 	(catch dets:lookup_keys(T, [])),
-    ?line {'EXIT', {badarg, [{dets,lookup,[no_table,1]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,lookup,[no_table,1],_}|_]}} =
 	(catch dets:lookup(no_table, 1)),
-    ?line {'EXIT', {badarg, [{dets,lookup_keys,[T,[1|2]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,lookup_keys,[T,[1|2]],_}|_]}} =
 	(catch dets:lookup_keys(T, [1 | 2])),
 
     %% member
-    ?line {'EXIT', {badarg, [{dets,member,[no_table,1]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,member,[no_table,1],_}|_]}} =
 	(catch dets:member(no_table, 1)),
 
     %% sync
-    ?line {'EXIT', {badarg, [{dets,sync,[no_table]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,sync,[no_table],_}|_]}} =
 	(catch dets:sync(no_table)),
 
     %% delete{_keys}
-    ?line {'EXIT', {badarg, [{dets,delete,[no_table,1]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,delete,[no_table,1],_}|_]}} =
 	(catch dets:delete(no_table, 1)),
 
     %% delete_object
-    ?line {'EXIT', {badarg, [{dets,delete_object,[no_table,{1,2,3}]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,delete_object,[no_table,{1,2,3}],_}|_]}} =
 	(catch dets:delete_object(no_table, {1,2,3})),
-    ?line {'EXIT', {badarg, [{dets,delete_object,[T,{1,2}]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,delete_object,[T,{1,2}],_}|_]}} =
 	(catch dets:delete_object(T, {1,2})),
-    ?line {'EXIT', {badarg, [{dets,delete_object,[no_table,[{1,2,3}]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,delete_object,[no_table,[{1,2,3}]],_}|_]}} =
 	(catch dets:delete_object(no_table, [{1,2,3}])),
-    ?line {'EXIT', {badarg, [{dets,delete_object,[T,[{1,2}]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,delete_object,[T,[{1,2}]],_}|_]}} =
 	(catch dets:delete_object(T, [{1,2}])),
-    ?line {'EXIT', {badarg, [{dets,delete_object,[T,[{1,2,3}|3]]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,delete_object,[T,[{1,2,3}|3]],_}|_]}} =
 	(catch dets:delete_object(T, [{1,2,3} | 3])),
 
     %% first,next,slot
-    ?line {'EXIT', {badarg, [{dets,first,[no_table]}|_]}} =
+    ?line {'EXIT', {badarg, [{dets,first,[no_table],_}|_]}} =
 	(catch dets:first(no_table)),
-    ?line {'EXIT', {badarg, [{dets,next,[no_table,1]}|_]}} =
+    ?line {'EXIT', {badarg, [{dets,next,[no_table,1],_}|_]}} =
 	(catch dets:next(no_table, 1)),
-    ?line {'EXIT', {badarg, [{dets,slot,[no_table,0]}|_]}} =
+    ?line {'EXIT', {badarg, [{dets,slot,[no_table,0],_}|_]}} =
 	(catch dets:slot(no_table, 0)),
 
     %% info
@@ -2321,26 +2324,26 @@ badarg(Config) when is_list(Config) ->
     ?line undefined = dets:info(T, foo),
 
     %% match_delete
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:match_delete(no_table, '_')),
 
     %% delete_all_objects
-    ?line {'EXIT', {badarg, [{dets,delete_all_objects,[no_table]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,delete_all_objects,[no_table],_}|_]}} =
 	(catch dets:delete_all_objects(no_table)),
 
     %% select_delete
     MSpec = [{'_',[],['$_']}],
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:select_delete(no_table, MSpec)),
-    ?line {'EXIT', {badarg, [{dets,select_delete,[T, <<17>>]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,select_delete,[T, <<17>>],_}|_]}} =
 	(catch dets:select_delete(T, <<17>>)),
 
     %% traverse, fold
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:traverse(no_table, fun(_) -> continue end)),
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:foldl(fun(_, A) -> A end, [], no_table)),
-    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true]}|_]}} = 
+    ?line {'EXIT', {badarg, [{dets,safe_fixtable,[no_table,true],_}|_]}} =
 	(catch dets:foldr(fun(_, A) -> A end, [], no_table)),
 
     %% close
@@ -2349,14 +2352,14 @@ badarg(Config) when is_list(Config) ->
     ?line {error, not_owner} = dets:close(T),
 
     %% init_table
-    ?line {'EXIT', {badarg,[{dets,init_table,[no_table,_,[]]}|_]}} =
+    ?line {'EXIT', {badarg,[{dets,init_table,[no_table,_,[]],_}|_]}} =
 	(catch dets:init_table(no_table, fun(X) -> X end)),
-    ?line {'EXIT', {badarg,[{dets,init_table,[no_table,_,[]]}|_]}} =
+    ?line {'EXIT', {badarg,[{dets,init_table,[no_table,_,[]],_}|_]}} =
 	(catch dets:init_table(no_table, fun(X) -> X end, [])),
 
     %% from_ets
     Ets = ets:new(ets,[]),
-    ?line {'EXIT', {badarg,[{dets,from_ets,[no_table,_]}|_]}} =
+    ?line {'EXIT', {badarg,[{dets,from_ets,[no_table,_],_}|_]}} =
 	(catch dets:from_ets(no_table, Ets)),
     ets:delete(Ets),
 
@@ -3247,7 +3250,7 @@ otp_5402(suite) ->
     [];
 otp_5402(Config) when is_list(Config) ->
     Tab = otp_5402,
-    ?line File = filename:join([cannot, write, this, file]),
+    ?line File = filename:join(["cannot", "write", "this", "file"]),
 
     %% close
     ?line{ok, T} = dets:open_file(Tab, [{ram_file,true},
@@ -3887,7 +3890,7 @@ crash(File, Where) ->
     crash(File, Where, 10).
 
 crash(File, Where, What) when is_integer(What) ->
-    ?line {ok, Fd} = file:open(File, read_write),
+    ?line {ok, Fd} = file:open(File, [read,write]),
     ?line file:position(Fd, Where),
     ?line ok = file:write(Fd, [What]),
     ?line ok = file:close(Fd).
@@ -4031,7 +4034,7 @@ writable(Fname) ->
     ?line file:write_file_info(Fname, Info#file_info{mode = Mode}).
 
 truncate(File, Where) ->
-    ?line {ok, Fd} = file:open(File, read_write),
+    ?line {ok, Fd} = file:open(File, [read,write]),
     ?line file:position(Fd, Where),
     ?line ok = file:truncate(Fd),
     ?line ok = file:close(Fd).

@@ -410,6 +410,8 @@
     <!-- Search "local types" as well -->
     <xsl:variable name="local_types"
                 select="ancestor::desc/preceding-sibling::type
+	                       [string-length(@name) > 0]
+                      | ancestor::type_desc/preceding-sibling::type
 	                       [string-length(@name) > 0]"/>
     <xsl:variable name="has_anno_in_local_type">
       <xsl:for-each select="$local_types">
@@ -730,21 +732,22 @@
   <xsl:template name="bookmarks1">
     <xsl:param name="entries"/>
     <xsl:if test="$entries != ''">
+      <xsl:for-each select="$entries">
 
-      <fo:bookmark internal-destination="{generate-id(/book/parts/part)}"
-        starting-state="hide">
-        <fo:bookmark-title>User's Guide</fo:bookmark-title>
-
-        <xsl:for-each select="$entries">
+        <fo:bookmark internal-destination="{generate-id(header/title)}"
+          starting-state="hide">
+          <fo:bookmark-title><xsl:value-of select="header/title"/></fo:bookmark-title>
+          
           <xsl:call-template name="bookmarks2">
             <xsl:with-param name="entries"
               select="chapter[header/title]"/>
           </xsl:call-template>
-        </xsl:for-each>
-
-      </fo:bookmark>
+          
+        </fo:bookmark>
+      </xsl:for-each>
     </xsl:if>
   </xsl:template>
+
 
   <xsl:template name="bookmarks2">
     <xsl:param name="entries"/>
@@ -932,9 +935,9 @@
   <xsl:template match="part">
     <xsl:variable name="partnum"><xsl:number level="any" from="book" count="part|application"/></xsl:variable>
 
-    <fo:block xsl:use-attribute-sets="h1" id="{generate-id()}">
+    <fo:block xsl:use-attribute-sets="h1" id="{generate-id(header/title)}">
       <xsl:value-of select="$partnum"/>&#160;&#160;&#160;
-      <xsl:text>User's Guide</xsl:text>
+      <xsl:value-of select="header/title"/>
     </fo:block>
 
     <xsl:apply-templates select="description">
@@ -1380,16 +1383,15 @@
   <!-- Func -->
   <xsl:template match="func">
     <xsl:param name="partnum"/>
-
-    <xsl:apply-templates select="name"/>
-    <xsl:apply-templates
-        select="name[string-length(@arity) > 0 and position()=last()]"
-        mode="types"/>
-
-    <xsl:apply-templates select="fsummary|type|desc">
-      <xsl:with-param name="partnum" select="$partnum"/>
-    </xsl:apply-templates>
-
+    <fo:block space-before="1.5em">
+      <xsl:apply-templates select="name"/>
+      <xsl:apply-templates
+	  select="name[string-length(@arity) > 0 and position()=last()]"
+	  mode="types"/>
+      <xsl:apply-templates select="fsummary|type|desc">
+	<xsl:with-param name="partnum" select="$partnum"/>
+      </xsl:apply-templates>
+    </fo:block>
   </xsl:template>
 
 
@@ -1422,14 +1424,10 @@
     <xsl:param name="partnum"/>
     <xsl:choose>
       <xsl:when test="ancestor::cref">
-        <fo:block id="{generate-id(nametext)}">
-          <xsl:value-of select="ret"/><xsl:text> </xsl:text><xsl:value-of select="nametext"/>
-        </fo:block>
+        <fo:block id="{generate-id(nametext)}"><xsl:value-of select="ret"/><xsl:text></xsl:text><xsl:value-of select="nametext"/></fo:block>
       </xsl:when>
       <xsl:otherwise>
-        <fo:block id="{generate-id(.)}">
-          <xsl:value-of select="."/>
-        </fo:block>
+        <fo:block id="{generate-id(.)}"><xsl:value-of select="."/></fo:block>
       </xsl:otherwise>
     </xsl:choose>
   </xsl:template>
@@ -1466,7 +1464,7 @@
         </fo:block>
       </fo:list-item-label>
       <fo:list-item-body start-indent="body-start()" format="justify">
-        <fo:block font-weight="bold">
+        <fo:block font-weight="bold" font-family="monospace" >
           <xsl:apply-templates>
             <xsl:with-param name="partnum" select="$partnum"/>
           </xsl:apply-templates>

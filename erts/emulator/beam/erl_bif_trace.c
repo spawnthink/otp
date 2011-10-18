@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1999-2010. All Rights Reserved.
+ * Copyright Ericsson AB 1999-2011. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -679,7 +679,7 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 		    } else if (tracer != NIL) {
 			tracee_port->tracer_proc = tracer;
 		    }
-		    /* matches are not counted for ports since it would violate compability */	
+		    /* matches are not counted for ports since it would violate compatibility */
 		    /* This could be a reason to modify this function or make a new one. */
 		}
 	    }

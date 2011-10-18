@@ -26,9 +26,11 @@
 
 -include_lib("common_test/include/ct.hrl").
 
+-define(DELAY, 500).
 -define(SLEEP, 500).
 -define(TIMEOUT, 60000).
 -define(LONG_TIMEOUT, 600000).
+
 -behaviour(ssl_session_cache_api).
 
 %% For the session cache tests
@@ -95,6 +97,16 @@ init_per_testcase(session_cache_process_mnesia, Config) ->
     mnesia:start(),
     init_customized_session_cache(mnesia, Config);
 
+init_per_testcase(session_cleanup, Config0) ->
+    Config = lists:keydelete(watchdog, 1, Config0),
+    Dog = test_server:timetrap(?TIMEOUT),
+    ssl:stop(),
+    application:load(ssl),
+    application:set_env(ssl, session_lifetime, 5),
+    application:set_env(ssl, session_delay_cleanup_time, ?DELAY),
+    ssl:start(),
+    [{watchdog, Dog} | Config];
+
 init_per_testcase(_TestCase, Config0) ->
     Config = lists:keydelete(watchdog, 1, Config0),
     Dog = test_server:timetrap(?TIMEOUT),
@@ -128,6 +140,10 @@ end_per_testcase(session_cache_process_mnesia, Config) ->
     ssl:stop(),
     ssl:start(),
     end_per_testcase(default_action, Config);
+end_per_testcase(session_cleanup, Config) ->
+    application:unset_env(ssl, session_delay_cleanup_time),
+    application:unset_env(ssl, session_lifetime),
+    end_per_testcase(default_action, Config);
 end_per_testcase(_TestCase, Config) ->
     Dog = ?config(watchdog, Config),
     case Dog of
@@ -148,7 +164,8 @@ end_per_testcase(_TestCase, Config) ->
 suite() -> [{ct_hooks,[ts_install_cth]}].
 
 all() -> 
-    [session_cache_process_list,
+    [session_cleanup,
+     session_cache_process_list,
      session_cache_process_mnesia].
 
 groups() -> 
@@ -159,7 +176,95 @@ init_per_group(_GroupName, Config) ->
 
 end_per_group(_GroupName, Config) ->
     Config.
+%%--------------------------------------------------------------------
+session_cleanup(doc) ->
+    ["Test that sessions are cleand up eventually, so that the session table "
+     "does not grow and grow ..."];
+session_cleanup(suite) ->
+    [];
+session_cleanup(Config)when is_list(Config) ->
+    process_flag(trap_exit, true),
+    ClientOpts = ?config(client_opts, Config),
+    ServerOpts = ?config(server_opts, Config),
+    {ClientNode, ServerNode, Hostname} = ssl_test_lib:run_where(Config),
 
+    Server =
+	ssl_test_lib:start_server([{node, ServerNode}, {port, 0},
+				   {from, self()},
+				   {mfa, {ssl_test_lib, session_info_result, []}},
+				   {options, ServerOpts}]),
+    Port = ssl_test_lib:inet_port(Server),
+    Client =
+	ssl_test_lib:start_client([{node, ClientNode},
+		      {port, Port}, {host, Hostname},
+				   {mfa, {ssl_test_lib, no_result, []}},
+		      {from, self()},  {options, ClientOpts}]),
+    SessionInfo =
+	receive
+	    {Server, Info} ->
+		Info
+	end,
+
+    %% Make sure session is registered
+    test_server:sleep(?SLEEP),
+
+    {status, _, _, StatusInfo} = sys:get_status(whereis(ssl_manager)),
+    [_, _,_, _, Prop] = StatusInfo,
+    State = state(Prop),
+    Cache = element(2, State),
+    SessionTimer = element(6, State),
+
+    Id = proplists:get_value(session_id, SessionInfo),
+    CSession = ssl_session_cache:lookup(Cache, {{Hostname, Port}, Id}),
+    SSession = ssl_session_cache:lookup(Cache, {Port, Id}),
+
+    true = CSession =/= undefined,
+    true = SSession =/= undefined,
+
+    %% Make sure session has expired and been cleaned up
+    check_timer(SessionTimer),
+    test_server:sleep(?DELAY *2),  %% Delay time + some extra time
+
+    DelayTimer = get_delay_timer(),
+
+    check_timer(DelayTimer),
+
+    test_server:sleep(?SLEEP),  %% Make sure clean has had to run
+
+    undefined = ssl_session_cache:lookup(Cache, {{Hostname, Port}, Id}),
+    undefined = ssl_session_cache:lookup(Cache, {Port, Id}),
+
+    process_flag(trap_exit, false),
+    ssl_test_lib:close(Server),
+    ssl_test_lib:close(Client).
+
+state([{data,[{"State", State}]} | _]) ->
+    State;
+state([_ | Rest]) ->
+    state(Rest).
+
+check_timer(Timer) ->
+    case erlang:read_timer(Timer) of
+	false ->
+	    {status, _, _, _} = sys:get_status(whereis(ssl_manager)),
+	    ok;
+	Int ->
+	    test_server:sleep(Int),
+	    check_timer(Timer)
+    end.
+
+get_delay_timer() ->
+    {status, _, _, StatusInfo} = sys:get_status(whereis(ssl_manager)),
+    [_, _,_, _, Prop] = StatusInfo,
+    State = state(Prop),
+    case element(7, State) of
+	undefined ->
+	    test_server:sleep(?SLEEP),
+	    get_delay_timer();
+	DelayTimer ->
+	    DelayTimer
+    end.
+%%--------------------------------------------------------------------
 session_cache_process_list(doc) ->
     ["Test reuse of sessions (short handshake)"];
 
@@ -175,7 +280,6 @@ session_cache_process_mnesia(suite) ->
     [];
 session_cache_process_mnesia(Config) when is_list(Config) ->
     session_cache_process(mnesia,Config).
-
 
 %%--------------------------------------------------------------------
 %%% Session cache API callbacks

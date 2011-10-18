@@ -14,11 +14,9 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$
-%%
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
-%% @author Richard Carlsson <richardc@it.uu.se>
+%% @author Richard Carlsson <carlsson.richard@gmail.com>
 %% @see edoc
 %% @end
 %% =====================================================================
@@ -34,13 +32,13 @@
 %% @headerfile "edoc_types.hrl"
 
 -include("edoc_types.hrl").
--include("xmerl.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 
 is_predefined(any, 0) -> true;
 is_predefined(atom, 0) -> true;
 is_predefined(binary, 0) -> true;
-is_predefined(bool, 0) -> true;
+is_predefined(bool, 0) -> true;    % kept for backwards compatibility
 is_predefined(char, 0) -> true;
 is_predefined(cons, 2) -> true;
 is_predefined(deep_string, 0) -> true;
@@ -51,6 +49,7 @@ is_predefined(list, 0) -> true;
 is_predefined(list, 1) -> true;
 is_predefined(nil, 0) -> true;
 is_predefined(none, 0) -> true;
+is_predefined(no_return, 0) -> true;
 is_predefined(number, 0) -> true;
 is_predefined(pid, 0) -> true;
 is_predefined(port, 0) -> true;

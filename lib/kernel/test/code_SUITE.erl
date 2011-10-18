@@ -81,6 +81,13 @@ init_per_suite(Config) ->
 end_per_suite(Config) ->
     Config.
 
+init_per_testcase(big_boot_embedded, Config) ->
+    case catch crypto:start() of
+	ok ->
+	    init_per_testcase(do_big_boot_embedded, Config);
+	_Else ->
+	    {skip, "Needs crypto!"}
+    end;
 init_per_testcase(_Func, Config) ->
     Dog=?t:timetrap(?t:minutes(5)),
     P=code:get_path(),
@@ -258,8 +265,8 @@ replace_path(Config) when is_list(Config) ->
 
     %% Add a completly new application.
 
-    NewAppName = "blurf_blarfer",
-    ?line NewAppDir = filename:join(Cwd, NewAppName ++ "-6.33.1"),
+    NewAppName = 'blurf_blarfer',
+    ?line NewAppDir = filename:join(Cwd, atom_to_list(NewAppName) ++ "-6.33.1"),
     ?line ok = file:make_dir(NewAppDir),
     ?line true = code:replace_path(NewAppName, NewAppDir),
     ?line NewAppDir = code:lib_dir(NewAppName),
@@ -410,8 +417,10 @@ all_loaded_1() ->
     ?line Loaded2 = match_and_remove(Preloaded, Loaded1),
 
     ObjExt = code:objfile_extension(),
-    ?line [] = lists:filter(fun({Mod,AbsName}) when is_atom(Mod), is_list(AbsName) ->
-				    Mod =:= filename:basename(AbsName, ObjExt);
+    ?line [] = lists:filter(fun({Mod,AbsName}) when is_atom(Mod),
+                                                    is_list(AbsName) ->
+                                    Mod =/= list_to_atom(filename:basename(AbsName,
+                                                                           ObjExt));
 			       (_) -> true
 			    end,
 			    Loaded2),
@@ -571,11 +580,13 @@ add_del_path(Config) when is_list(Config) ->
 clash(Config) when is_list(Config) ->
     DDir = ?config(data_dir,Config)++"clash/",
     P = code:get_path(),
+    [TestServerPath|_] = [Path || Path <- code:get_path(), 
+				  re:run(Path,"test_server/?$",[]) /= nomatch],
 
     %% test non-clashing entries
 
-    %% remove "." to prevent clash with test-server path
-    ?line true = code:del_path("."),
+    %% remove TestServerPath to prevent clash with test-server path
+    ?line true = code:del_path(TestServerPath),
     ?line true = code:add_path(DDir++"foobar-0.1/ebin"),
     ?line true = code:add_path(DDir++"zork-0.8/ebin"),
     test_server:capture_start(),
@@ -587,8 +598,8 @@ clash(Config) when is_list(Config) ->
 
     %% test clashing entries
 
-    %% remove "." to prevent clash with test-server path
-    ?line true = code:del_path("."),
+    %% remove TestServerPath to prevent clash with test-server path
+    ?line true = code:del_path(TestServerPath),
     ?line true = code:add_path(DDir++"foobar-0.1/ebin"),
     ?line true = code:add_path(DDir++"foobar-0.1.ez/foobar-0.1/ebin"),
     test_server:capture_start(),
@@ -601,9 +612,9 @@ clash(Config) when is_list(Config) ->
 
     %% test "Bad path can't read"
 
-    %% remove "." to prevent clash with test-server path
+    %% remove TestServerPath to prevent clash with test-server path
     Priv = ?config(priv_dir, Config),
-    ?line true = code:del_path("."),
+    ?line true = code:del_path(TestServerPath),
     TmpEzFile = Priv++"foobar-0.tmp.ez",
     ?line {ok, _} = file:copy(DDir++"foobar-0.1.ez", TmpEzFile),
     ?line true = code:add_path(TmpEzFile++"/foobar-0.1/ebin"),
@@ -984,9 +995,9 @@ purge_stacktrace(Config) when is_list(Config) ->
 	error:function_clause ->
 	    ?line code:load_file(code_b_test),
 	    ?line case erlang:get_stacktrace() of
-		      [{?MODULE,_,[a]},
-		       {code_b_test,call,2},
-		       {?MODULE,purge_stacktrace,1}|_] ->
+		      [{?MODULE,_,[a],_},
+		       {code_b_test,call,2,_},
+		       {?MODULE,purge_stacktrace,1,_}|_] ->
 			  ?line false = code:purge(code_b_test),
 			  ?line [] = erlang:get_stacktrace()
 		  end
@@ -996,8 +1007,8 @@ purge_stacktrace(Config) when is_list(Config) ->
 	error:function_clause ->
 	    ?line code:load_file(code_b_test),
 	    ?line case erlang:get_stacktrace() of
-		      [{code_b_test,call,[nofun,2]},
-		       {?MODULE,purge_stacktrace,1}|_] ->
+		      [{code_b_test,call,[nofun,2],_},
+		       {?MODULE,purge_stacktrace,1,_}|_] ->
 			  ?line false = code:purge(code_b_test),
 			  ?line [] = erlang:get_stacktrace()
 		  end
@@ -1008,8 +1019,8 @@ purge_stacktrace(Config) when is_list(Config) ->
 	error:badarg ->
 	    ?line code:load_file(code_b_test),
 	    ?line case erlang:get_stacktrace() of
-		      [{code_b_test,call,Args},
-		       {?MODULE,purge_stacktrace,1}|_] ->
+		      [{code_b_test,call,Args,_},
+		       {?MODULE,purge_stacktrace,1,_}|_] ->
 			  ?line false = code:purge(code_b_test),
 			  ?line [] = erlang:get_stacktrace()
 		  end
@@ -1023,8 +1034,8 @@ mult_lib_roots(Config) when is_list(Config) ->
 			   "my_dummy_app-c/ebin/code_SUITE_mult_root_module"),
 
     %% Set up ERL_LIBS and start a slave node.
-    ErlLibs = filename:join(DataDir, first_root) ++ mult_lib_sep() ++
-	filename:join(DataDir, second_root),
+    ErlLibs = filename:join(DataDir, "first_root") ++ mult_lib_sep() ++
+	filename:join(DataDir, "second_root"),
 
     ?line {ok,Node} = 
 	?t:start_node(mult_lib_roots, slave,
@@ -1344,7 +1355,7 @@ create_script(Config) ->
     ?line Apps = application_controller:which_applications(),
     ?line {value,{_,_,KernelVer}} = lists:keysearch(kernel, 1, Apps),
     ?line {value,{_,_,StdlibVer}} = lists:keysearch(stdlib, 1, Apps),
-    ?line {ok,Fd} = file:open(Name ++ ".rel", write),
+    ?line {ok,Fd} = file:open(Name ++ ".rel", [write]),
     ?line io:format(Fd,
 		    "{release, {\"Test release 3\", \"P2A\"}, \n"
 		    " {erts, \"9.42\"}, \n"
@@ -1409,7 +1420,7 @@ create_big_script(Config,Local) ->
     %% Now we should have only "real" applications...
     ?line [application:load(list_to_atom(Y)) || {match,[Y]} <- [ re:run(X,code:lib_dir()++"/"++"([^/-]*).*/ebin",[{capture,[1],list}]) || X <- code:get_path()],filter_app(Y,Local)],
     ?line Apps = [ {N,V} || {N,_,V} <- application:loaded_applications()],
-    ?line {ok,Fd} = file:open(Name ++ ".rel", write),
+    ?line {ok,Fd} = file:open(Name ++ ".rel", [write]),
     ?line io:format(Fd,
 		    "{release, {\"Test release 3\", \"P2A\"}, \n"
 		    " {erts, \"9.42\"}, \n"
@@ -1470,7 +1481,7 @@ do_on_load_error(ReturnValue) ->
     ?line ErrorPid ! ReturnValue,
     receive
 	{'DOWN',Ref,process,_,Exit} ->
-	    ?line {undef,[{on_load_error,main,[]}|_]} = Exit
+	    ?line {undef,[{on_load_error,main,[],_}|_]} = Exit
     end.
 
 native_early_modules(suite) -> [];

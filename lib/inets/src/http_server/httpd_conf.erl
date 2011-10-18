@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1997-2010. All Rights Reserved.
+%% Copyright Ericsson AB 1997-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -219,9 +219,8 @@ load("ServerName " ++ ServerName, []) ->
 
 load("SocketType " ++ SocketType, []) ->
     %% ssl is the same as HTTP_DEFAULT_SSL_KIND
-    %% ossl is ssl based on OpenSSL (the "old" ssl)
     %% essl is the pure Erlang-based ssl (the "new" ssl)
-    case check_enum(clean(SocketType), ["ssl", "ossl", "essl", "ip_comm"]) of
+    case check_enum(clean(SocketType), ["ssl", "essl", "ip_comm"]) of
 	{ok, ValidSocketType} ->
 	    {ok, [], {socket_type, ValidSocketType}};
 	{error,_} ->
@@ -305,7 +304,7 @@ load("MaxKeepAliveRequests " ++  MaxRequests, []) ->
 			  " is an invalid MaxKeepAliveRequests")}
     end;
 
-%% This clause is keept for backwards compability 
+%% This clause is kept for backwards compatibility
 load("MaxKeepAliveRequest " ++  MaxRequests, []) ->
     case make_integer(MaxRequests) of
 	{ok, Integer} ->
@@ -541,7 +540,6 @@ validate_config_params([{server_name, Value} | _]) ->
 validate_config_params([{socket_type, Value} | Rest]) 
   when (Value =:= ip_comm) orelse 
        (Value =:= ssl) orelse 
-       (Value =:= ossl) orelse 
        (Value =:= essl) ->
     validate_config_params(Rest);
 validate_config_params([{socket_type, Value} | _]) ->
@@ -811,7 +809,7 @@ lookup_socket_type(ConfigDB) ->
     case httpd_util:lookup(ConfigDB, socket_type, ip_comm) of
 	ip_comm ->
 	    ip_comm;
-	SSL when (SSL =:= ssl) orelse (SSL =:= ossl) orelse (SSL =:= essl) ->
+	SSL when (SSL =:= ssl) orelse (SSL =:= essl) ->
 	    SSLTag = 
 		if
 		    (SSL =:= ssl) ->

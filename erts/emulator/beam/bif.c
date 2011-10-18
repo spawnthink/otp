@@ -811,7 +811,7 @@ BIF_RETTYPE spawn_opt_1(BIF_ALIST_1)
     so.min_heap_size  = H_MIN_SIZE;
     so.min_vheap_size = BIN_VH_MIN_SIZE;
     so.priority       = PRIORITY_NORMAL;
-    so.max_gen_gcs    = (Uint16) erts_smp_atomic32_read(&erts_max_gen_gcs);
+    so.max_gen_gcs    = (Uint16) erts_smp_atomic32_read_nob(&erts_max_gen_gcs);
     so.scheduler      = 0;
 
     /*
@@ -1189,8 +1189,9 @@ raise_3(Process *c_p, Eterm class, Eterm value, Eterm stacktrace) {
     Eterm l, *hp, *hp_end, *tp;
     int depth, cnt;
     size_t sz;
+    int must_copy = 0;
     struct StackTrace *s;
-    
+
     if (class == am_error) {
 	c_p->fvalue = value;
 	reason = EXC_ERROR;
@@ -1206,35 +1207,74 @@ raise_3(Process *c_p, Eterm class, Eterm value, Eterm stacktrace) {
     /* Check syntax of stacktrace, and count depth.
      * Accept anything that can be returned from erlang:get_stacktrace/0,
      * as well as a 2-tuple with a fun as first element that the
-     * error_handler may need to give us.
+     * error_handler may need to give us. Also allow old-style
+     * MFA three-tuples.
      */
     for (l = stacktrace, depth = 0;  
 	 is_list(l);  
 	 l = CDR(list_val(l)), depth++) {
 	Eterm t = CAR(list_val(l));
-	int arity;
+	Eterm location = NIL;
+
 	if (is_not_tuple(t)) goto error;
 	tp = tuple_val(t);
-	arity = arityval(tp[0]);
-	if ((arity == 3) && is_atom(tp[1]) && is_atom(tp[2])) continue;
-	if ((arity == 2) && is_fun(tp[1])) continue;
-	goto error;
+	switch (arityval(tp[0])) {
+	case 2:
+	    /* {Fun,Args} */
+	    if (is_fun(tp[1])) {
+		must_copy = 1;
+	    } else {
+		goto error;
+	    }
+	    break;
+	case 3:
+	    /*
+	     * One of:
+	     * {Fun,Args,Location}
+	     * {M,F,A}
+	     */
+	    if (is_fun(tp[1])) {
+		location = tp[3];
+	    } else if (is_atom(tp[1]) && is_atom(tp[2])) {
+		must_copy = 1;
+	    } else {
+		goto error;
+	    }
+	    break;
+	case 4:
+	    if (!(is_atom(tp[1]) && is_atom(tp[2]))) {
+		goto error;
+	    }
+	    location = tp[4];
+	    break;
+	default:
+	    goto error;
+	}
+	if (is_not_list(location) && is_not_nil(location)) {
+	    goto error;
+	}
     }
     if (is_not_nil(l)) goto error;
     
     /* Create stacktrace and store */
-    if (depth <= erts_backtrace_depth) {
+    if (erts_backtrace_depth < depth) {
+	depth = erts_backtrace_depth;
+	must_copy = 1;
+    }
+    if (must_copy) {
+	cnt = depth;
+	c_p->ftrace = NIL;
+    } else {
+	/* No need to copy the stacktrace */
 	cnt = 0;
 	c_p->ftrace = stacktrace;
-    } else {
-	cnt = depth = erts_backtrace_depth;
-	c_p->ftrace = NIL;
     }
+
     tp = &c_p->ftrace;
     sz = (offsetof(struct StackTrace, trace) + sizeof(Eterm) - 1) 
 	/ sizeof(Eterm);
-    hp = HAlloc(c_p, sz + 2*(cnt + 1));
-    hp_end = hp + sz + 2*(cnt + 1);
+    hp = HAlloc(c_p, sz + (2+6)*(cnt + 1));
+    hp_end = hp + sz + (2+6)*(cnt + 1);
     s = (struct StackTrace *) hp;
     s->header = make_neg_bignum_header(sz - 1);
     s->freason = reason;
@@ -1242,13 +1282,29 @@ raise_3(Process *c_p, Eterm class, Eterm value, Eterm stacktrace) {
     s->current = NULL;
     s->depth = 0;
     hp += sz;
-    if (cnt > 0) {
+    if (must_copy) {
+	int cnt;
+
 	/* Copy list up to depth */
 	for (cnt = 0, l = stacktrace;
 	     cnt < depth;
 	     cnt++, l = CDR(list_val(l))) {
+	    Eterm t;
+	    Eterm *tpp;
+	    int arity;
+
 	    ASSERT(*tp == NIL);
-	    *tp = CONS(hp, CAR(list_val(l)), *tp);
+	    t = CAR(list_val(l));
+	    tpp = tuple_val(t);
+	    arity = arityval(tpp[0]);
+	    if (arity == 2) {
+		t = TUPLE3(hp, tpp[1], tpp[2], NIL);
+		hp += 4;
+	    } else if (arity == 3 && is_atom(tpp[1])) {
+		t = TUPLE4(hp, tpp[1], tpp[2], tpp[3], NIL);
+		hp += 5;
+	    }
+	    *tp = CONS(hp, t, *tp);
 	    tp = &CDR(list_val(*tp));
 	    hp += 2;
 	}
@@ -1256,7 +1312,7 @@ raise_3(Process *c_p, Eterm class, Eterm value, Eterm stacktrace) {
     c_p->ftrace = CONS(hp, c_p->ftrace, make_big((Eterm *) s));
     hp += 2;
     ASSERT(hp <= hp_end);
-    
+    HRelease(c_p, hp_end, hp);
     BIF_ERROR(c_p, reason);
     
  error:
@@ -3417,10 +3473,10 @@ BIF_RETTYPE ports_0(BIF_ALIST_0)
 
     erts_smp_mtx_lock(&ports_snapshot_mtx); /* One snapshot at a time */
 
-    erts_smp_atomic_set(&erts_dead_ports_ptr,
-			(erts_aint_t) (port_buf + erts_max_ports));
+    erts_smp_atomic_set_nob(&erts_dead_ports_ptr,
+			    (erts_aint_t) (port_buf + erts_max_ports));
 
-    next_ss = erts_smp_atomic32_inctest(&erts_ports_snapshot);
+    next_ss = erts_smp_atomic32_inc_read_relb(&erts_ports_snapshot);
 
     for (i = erts_max_ports-1; i >= 0; i--) {
 	Port* prt = &erts_port[i];
@@ -3434,8 +3490,8 @@ BIF_RETTYPE ports_0(BIF_ALIST_0)
 	erts_smp_port_state_unlock(prt);
     }
 
-    dead_ports = (Eterm*)erts_smp_atomic_xchg(&erts_dead_ports_ptr,
-					      (erts_aint_t) NULL);
+    dead_ports = (Eterm*)erts_smp_atomic_xchg_nob(&erts_dead_ports_ptr,
+						  (erts_aint_t) NULL);
     erts_smp_mtx_unlock(&ports_snapshot_mtx);
 
     ASSERT(pp <= dead_ports);
@@ -3942,8 +3998,8 @@ BIF_RETTYPE system_flag_2(BIF_ALIST_2)
 	    goto error;
 	}
 	nval = (n > (Sint) ((Uint16) -1)) ? ((Uint16) -1) : ((Uint16) n);
-	oval = (Uint) erts_smp_atomic32_xchg(&erts_max_gen_gcs,
-					     (erts_aint32_t) nval);
+	oval = (Uint) erts_smp_atomic32_xchg_nob(&erts_max_gen_gcs,
+						 (erts_aint32_t) nval);
 	BIF_RET(make_small(oval));
     } else if (BIF_ARG_1 == am_min_heap_size) {
 	int oval = H_MIN_SIZE;
@@ -4286,7 +4342,7 @@ void erts_init_bif(void)
 
     erts_smp_spinlock_init(&make_ref_lock, "make_ref");
     erts_smp_mtx_init(&ports_snapshot_mtx, "ports_snapshot");
-    erts_smp_atomic_init(&erts_dead_ports_ptr, (erts_aint_t) NULL);
+    erts_smp_atomic_init_nob(&erts_dead_ports_ptr, (erts_aint_t) NULL);
 
     /*
      * bif_return_trap/1 is a hidden BIF that bifs that need to

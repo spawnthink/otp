@@ -3709,6 +3709,8 @@ static int inet_ctl_fdopen(inet_descriptor* desc, int domain, int type,
     /* check that it is a socket and that the socket is bound */
     if (IS_SOCKET_ERROR(sock_name(s, (struct sockaddr*) &name, &sz)))
 	return ctl_error(sock_errno(), rbuf, rsize);
+    if (name.sa.sa_family != domain)
+	return ctl_error(EINVAL, rbuf, rsize);
     desc->s = s;
     if ((desc->event = sock_create_event(desc)) == INVALID_EVENT)
 	return ctl_error(sock_errno(), rbuf, rsize);
@@ -6537,7 +6539,7 @@ static int sctp_fill_opts(inet_descriptor* desc, char* buf, int buflen,
 	    struct linger lg;
 	    unsigned int  sz = sizeof(lg);
 	    
-	    if (sock_getopt(desc->s, IPPROTO_SCTP, SO_LINGER,
+	    if (sock_getopt(desc->s, SOL_SOCKET, SO_LINGER,
 			    &lg, &sz) < 0) continue;
 	    /* Fill in the response: */
 	    PLACE_FOR(spec, i, 
@@ -6573,7 +6575,7 @@ static int sctp_fill_opts(inet_descriptor* desc, char* buf, int buflen,
 	    {
 	    case INET_OPT_RCVBUF   :
 	    {
-		proto  = IPPROTO_SCTP;
+		proto  = SOL_SOCKET;
 		type   = SO_RCVBUF;
 		is_int = 1;
 		tag    = am_recbuf;
@@ -6581,7 +6583,7 @@ static int sctp_fill_opts(inet_descriptor* desc, char* buf, int buflen,
 	    }
 	    case INET_OPT_SNDBUF   :
 	    {
-		proto  = IPPROTO_SCTP;
+		proto  = SOL_SOCKET;
 		type   = SO_SNDBUF;
 		is_int = 1;
 		tag    = am_sndbuf;
@@ -7010,7 +7012,7 @@ static int sctp_fill_opts(inet_descriptor* desc, char* buf, int buflen,
 	default:
 	    RETURN_ERROR(spec, -EINVAL); /* No more valid options */
 	}
-	/* If we get here one result has been succesfully loaded */
+	/* If we get here one result has been successfully loaded */
 	length ++;
     }
     if (buflen != 0) RETURN_ERROR(spec, -EINVAL); /* Optparam mismatch */
@@ -7027,8 +7029,7 @@ static int sctp_fill_opts(inet_descriptor* desc, char* buf, int buflen,
     i = LOAD_TUPLE(spec, i, 3);
 
     /* Now, convert "spec" into the returnable term: */
-    /* desc->caller = 0;	  What does it mean? */
-    driver_output_term(desc->port, spec, i);
+    driver_send_term(desc->port, driver_caller(desc->port), spec, i);
     FREE(spec);
 
     (*dest)[0] = INET_REP_SCTP;
@@ -9306,7 +9307,7 @@ static int tcp_inet_output(tcp_descriptor* desc, HANDLE event)
 		goto done;
 	    }
 	}
-#endif /* SOCKOPT_CONNECT_STAT */
+#endif /* SO_ERROR */
 #endif /* !__WIN32__ */
 
 	desc->inet.state = TCP_STATE_CONNECTED;
@@ -9739,7 +9740,7 @@ static int packet_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	    if (desc->active || (len != 8))
 		return ctl_error(EINVAL, rbuf, rsize);
 	    timeout = get_int32(buf);
-	    /* The 2nd arg, Length(4), is ignored for both UDP ans SCTP protocols,
+	    /* The 2nd arg, Length(4), is ignored for both UDP and SCTP protocols,
 	       since they are msg-oriented. */
 
 	    if (enq_async(desc, tbuf, PACKET_REQ_RECV) < 0)
@@ -10111,7 +10112,7 @@ static int packet_inet_output(udp_descriptor* udesc, HANDLE event)
 		goto done;
 	    }
 	}
-#endif /* SOCKOPT_CONNECT_STAT */
+#endif /* SO_ERROR */
 #endif /* !__WIN32__ */
 
 	desc->state = PACKET_STATE_CONNECTED;

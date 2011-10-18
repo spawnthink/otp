@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2010. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -25,8 +25,8 @@
 -export([start_link/0,
 	 create_RELEASES/1, create_RELEASES/2, create_RELEASES/4,
 	 unpack_release/1,
-	 check_install_release/1, install_release/1, install_release/2,
-	 remove_release/1, 
+	 check_install_release/1, check_install_release/2,
+	 install_release/1, install_release/2, remove_release/1,
 	 which_releases/0, make_permanent/1, reboot_old_release/1,
 	 set_unpacked/2, set_removed/1, install_file/2]).
 -export([upgrade_app/2, downgrade_app/2, downgrade_app/3,
@@ -149,15 +149,35 @@ unpack_release(ReleaseName) ->
 %%-----------------------------------------------------------------
 %% Purpose: Checks the relup script for the specified version.
 %%          The release must be unpacked.
+%%          Options = [purge] - all old code that can be soft purged
+%%          will be purged if all checks succeeds. This can be usefull
+%%          in order to reduce time needed in the following call to
+%%          install_release.
 %% Returns: {ok, FromVsn, Descr} | {error, Reason}
-%%          Reason = {already_installed, Vsn} |
+%%          Reason = {illegal_option, IllegalOpt} |
+%%                   {already_installed, Vsn} |
 %%                   {bad_relup_file, RelFile} |
 %%                   {no_such_release, Vsn} |
 %%                   {no_such_from_vsn, Vsn} |
 %%                   exit_reason()
 %%-----------------------------------------------------------------
 check_install_release(Vsn) ->
-    call({check_install_release, Vsn}).
+    check_install_release(Vsn, []).
+
+check_install_release(Vsn, Opts) ->
+    case check_check_install_options(Opts, false) of
+	{ok,Purge} ->
+	    call({check_install_release, Vsn, Purge});
+	Error ->
+	    Error
+    end.
+
+check_check_install_options([purge|Opts], _) ->
+    check_check_install_options(Opts, true);
+check_check_install_options([Illegal|_],_Purge) ->
+    {error,{illegal_option,Illegal}};
+check_check_install_options([],Purge) ->
+    {ok,Purge}.
 
 
 %%-----------------------------------------------------------------
@@ -291,7 +311,8 @@ check_script(Script, LibDirs) ->
     release_handler_1:check_script(Script, LibDirs).
 
 %%-----------------------------------------------------------------
-%% eval_script(Script, Apps, LibDirs, Opts) -> {ok, UnPurged} |
+%% eval_script(Script, Apps, LibDirs, NewLibs, Opts) ->
+%%                                             {ok, UnPurged} |
 %%                                             restart_new_emulator |
 %%                                             {error, Error}
 %%                                             {'EXIT', Reason}
@@ -299,9 +320,13 @@ check_script(Script, LibDirs) ->
 %% net_kernel:monitor_nodes(true) before calling this function.
 %% No!  No other process than the release_handler can ever call this
 %% function, if sync_nodes is used.
-%%-----------------------------------------------------------------
-eval_script(Script, Apps, LibDirs, Opts) ->
-    catch release_handler_1:eval_script(Script, Apps, LibDirs, Opts).
+%%
+%% LibDirs is a list of all applications, while NewLibs is a list of
+%% applications that have changed version between the current and the
+%% new release.
+%% -----------------------------------------------------------------
+eval_script(Script, Apps, LibDirs, NewLibs, Opts) ->
+    catch release_handler_1:eval_script(Script, Apps, LibDirs, NewLibs, Opts).
 
 %%-----------------------------------------------------------------
 %% Func: create_RELEASES(Root, RelFile, LibDirs) -> ok | {error, Reason}
@@ -404,6 +429,7 @@ eval_appup_script(App, ToVsn, ToDir, Script) ->
     AppSpecL = read_appspec(App, ToDir),
     Res = release_handler_1:eval_script(Script,
 					[], % [AppSpec]
+					[{App, ToVsn, ToDir}],
 					[{App, ToVsn, ToDir}],
 					[]), % [Opt]
     case Res of
@@ -535,11 +561,12 @@ handle_call({unpack_release, ReleaseName}, _From, S)
 handle_call({unpack_release, _ReleaseName}, _From, S) ->
     {reply, {error, client_node}, S};
 
-handle_call({check_install_release, Vsn}, _From, S) ->
+handle_call({check_install_release, Vsn, Purge}, _From, S) ->
     case catch do_check_install_release(S#state.rel_dir,
 					Vsn,
 					S#state.releases,
-					S#state.masters) of
+					S#state.masters,
+					Purge) of
 	{ok, CurrentVsn, Descr} -> 
 	    {reply, {ok, CurrentVsn, Descr}, S};
 	{error, Reason}   ->
@@ -849,7 +876,7 @@ check_path_response(Path, {ok, _Info}) ->
 check_path_response(Path, {error, _Reason}) ->
 	throw({error, {no_such_directory, Path}}).
 
-do_check_install_release(RelDir, Vsn, Releases, Masters) ->
+do_check_install_release(RelDir, Vsn, Releases, Masters, Purge) ->
     case lists:keysearch(Vsn, #release.vsn, Releases) of
 	{value, #release{status = current}} ->
 	    {error, {already_installed, Vsn}};
@@ -874,7 +901,20 @@ do_check_install_release(RelDir, Vsn, Releases, Masters) ->
 		    case get_rh_script(LatestRelease, Release, RelDir, Masters) of
 			{ok, {CurrentVsn, Descr, Script}} ->
 			    case catch check_script(Script, Libs) of
-				ok ->
+				{ok,SoftPurgeMods} when Purge=:=true ->
+				    %% Get modules with brutal_purge
+				    %% instructions, but that can be
+				    %% soft purged
+				    {ok,BrutalPurgeMods} =
+					release_handler_1:check_old_processes(
+					  Script,brutal_purge),
+				    lists:foreach(
+				      fun(Mod) ->
+					      catch erlang:purge_module(Mod)
+				      end,
+				      SoftPurgeMods ++ BrutalPurgeMods),
+				    {ok, CurrentVsn, Descr};
+				{ok,_} ->
 				    {ok, CurrentVsn, Descr};
 				Else ->
 				    Else
@@ -890,6 +930,7 @@ do_check_install_release(RelDir, Vsn, Releases, Masters) ->
     end.
 	    
 do_install_release(#state{start_prg = StartPrg,
+			  root = RootDir,
 			  rel_dir = RelDir, releases = Releases,
 			  masters = Masters,
 			  static_emulator = Static},
@@ -905,7 +946,9 @@ do_install_release(#state{start_prg = StartPrg,
 		    EnvBefore = application_controller:prep_config_change(),
 		    Apps = change_appl_data(RelDir, Release, Masters),
 		    LibDirs = Release#release.libs,
-		    case eval_script(Script, Apps, LibDirs, Opts) of
+		    NewLibs = get_new_libs(LatestRelease#release.libs,
+					   Release#release.libs),
+		    case eval_script(Script, Apps, LibDirs, NewLibs, Opts) of
 			{ok, []} ->
 			    application_controller:config_change(EnvBefore),
 			    mon_nodes(false),
@@ -926,8 +969,8 @@ do_install_release(#state{start_prg = StartPrg,
 			    NReleases = set_status(Vsn, current, Releases),
 			    NReleases2 = set_status(Vsn,tmp_current,NReleases),
 			    write_releases(RelDir, NReleases2, Masters),
-			    prepare_restart_new_emulator(StartPrg, RelDir,
-							 Release, 
+			    prepare_restart_new_emulator(StartPrg, RootDir,
+							 RelDir, Release,
 							 PermanentRelease, 
 							 Masters),
 			    {restart_new_emulator, CurrentVsn, Descr};
@@ -997,7 +1040,7 @@ do_make_services_permanent(PermanentVsn,Vsn, PermanentEVsn, EVsn) ->
 		    throw(Error4)
 	    end
     end.
-	    
+
 do_make_permanent(#state{releases = Releases,
 			 rel_dir = RelDir, unpurged = Unpurged,
 			 masters = Masters,
@@ -1409,8 +1452,8 @@ prepare_restart_nt(#release{erts_vsn = EVsn, vsn = Vsn},
     FutureServiceName = hd(string:tokens(atom_to_list(node()),"@")) 
 	++ "_" ++ Vsn,
     CurrentService = case erlsrv:get_service(PermEVsn,CurrentServiceName) of
-			 {error, Reason} ->
-			     throw({error, Reason});
+			 {error, _} = Error1 ->
+			     throw(Error1);
 			 CS ->
 			     CS
 		     end,
@@ -1425,37 +1468,33 @@ prepare_restart_nt(#release{erts_vsn = EVsn, vsn = Vsn},
 					CurrentServiceName),
     
     case erlsrv:store_service(EVsn, FutureService) of
-	{error, Rison} ->
-	    throw({error,Rison});
-	_ ->
+	{error, _} = Error2 ->
+	    throw(Error2);
+	_X ->
 	    erlsrv:disable_service(EVsn, FutureServiceName),
 	    ErlSrv = filename:nativename(erlsrv:erlsrv(EVsn)),
-	    case heart:set_cmd(ErlSrv ++ " enable " ++ FutureServiceName ++
-			       " & " ++ ErlSrv ++ " start " ++ 
-			       FutureServiceName ++
-			       " & " ++ ErlSrv ++ " disable " ++ 
-			       FutureServiceName) of
+	    StartDisabled = ErlSrv ++ " start_disabled " ++ FutureServiceName,
+	    case heart:set_cmd(StartDisabled) of
 		ok ->
 		    ok;
-		Error ->
-		    throw({error, {'heart:set_cmd() error', Error}})
+		Error3 ->
+		    throw({error, {'heart:set_cmd() error', Error3}})
 	    end
     end.
     
-
 %%-----------------------------------------------------------------
 %% Set things up for restarting the new emulator.  The actual
 %% restart is performed by calling init:reboot() higher up.
 %%-----------------------------------------------------------------
-prepare_restart_new_emulator(StartPrg, RelDir,
-			     Release, PRelease,
-			     Masters) ->
+prepare_restart_new_emulator(StartPrg, RootDir, RelDir,
+			     Release, PRelease, Masters) ->
     #release{erts_vsn = EVsn, vsn = Vsn} = Release,
     Data = EVsn ++ " " ++ Vsn,
     DataFile = write_new_start_erl(Data, RelDir, Masters),
     %% Tell heart to use DataFile instead of start_erl.data
     case os:type() of
 	{win32,nt} ->
+	    write_ini_file(RootDir,EVsn,Masters),
 	    prepare_restart_nt(Release,PRelease,DataFile); 
 	{unix,_} ->
 	    StartP = check_start_prg(StartPrg, Masters),
@@ -1832,48 +1871,8 @@ write_start(File, Data, false) ->
     end;
 write_start(File, Data, Masters) ->
     all_masters(Masters),
-    write_start_m(File, Data, Masters).
+    safe_write_file_m(File, Data, Masters).
 
-
-%%-----------------------------------------------------------------
-%% Write the "start_erl.data" file at all master nodes.
-%%   1. Save "start_erl.backup" at all nodes.
-%%   2. Write the "start_erl.change" file at all nodes.
-%%   3. Move "start_erl.change" to "start_erl.data".
-%%   4. Remove "start_erl.backup" at all nodes.
-%%
-%% If one of the steps above fails, all steps is recovered from
-%% (as long as possible), except for 4 which is allowed to fail.
-%%-----------------------------------------------------------------
-write_start_m(File, Data, Masters) ->
-    Dir = filename:dirname(File),
-    Backup = filename:join(Dir, "start_erl.backup"),
-    Change = filename:join(Dir, "start_erl.change"),
-    case at_all_masters(Masters, ?MODULE, do_copy_files,
-			[File, [Backup]]) of
-	ok ->
-	    case at_all_masters(Masters, ?MODULE, do_write_file,
-				[Change, Data]) of
-		ok ->
-		    case at_all_masters(Masters, file, rename,
-					[Change, File]) of
-			ok ->
-			    remove_files(all, [Backup, Change], Masters),
-			    ok;
-			{error, {Master, R}} ->
-			    takewhile(Master, Masters, file, rename,
-				      [Backup, File]),
-			    remove_files(all, [Backup, Change], Masters),
-			    throw({error, {Master, R, move_start_erl}})
-		    end;
-		{error, {Master, R}} ->
-		    remove_files(all, [Backup, Change], Masters),
-		    throw({error, {Master, R, write_start_erl}})
-	    end;
-	{error, {Master, R}} ->
-	    remove_files(Master, [Backup], Masters),
-	    throw({error, {Master, R, backup_start_erl}})
-    end.
 
 %%-----------------------------------------------------------------
 %% Copy the "start.boot" and "sys.config" from SrcDir to DestDir at all
@@ -1917,3 +1916,97 @@ set_static_files(SrcDir, DestDir, Masters) ->
 	    remove_files(Master, [BackupBoot, BackupConf], Masters),
 	    throw({error, {Master, R, backup_start_config}})
     end.
+
+%%-----------------------------------------------------------------
+%% Write erl.ini
+%% Writes the erl.ini file used by erl.exe when (re)starting the erlang node.
+%% At first installation, this is done by Install.exe, which means that if
+%% the format of this file for some reason is changed, then Install.c must
+%% also be updated (and probably some other c-files which read erl.ini)
+%%-----------------------------------------------------------------
+write_ini_file(RootDir,EVsn,Masters) ->
+   BinDir = filename:join([RootDir,"erts-"++EVsn,"bin"]),
+   Str0 = io_lib:format("[erlang]~n"
+                        "Bindir=~s~n"
+                        "Progname=erl~n"
+                        "Rootdir=~s~n",
+		        [filename:nativename(BinDir),
+		         filename:nativename(RootDir)]),
+   Str = re:replace(Str0,"\\\\","\\\\\\\\",[{return,list},global]),
+   IniFile = filename:join(BinDir,"erl.ini"),
+   do_write_ini_file(IniFile,Str,Masters).
+
+do_write_ini_file(File,Data,false) ->
+    case do_write_file(File, Data) of
+	ok    -> ok;
+	Error -> throw(Error)
+    end;
+do_write_ini_file(File,Data,Masters) ->
+    all_masters(Masters),
+    safe_write_file_m(File, Data, Masters).
+
+
+%%-----------------------------------------------------------------
+%% Write the given file at all master nodes.
+%%   1. Save <File>.backup at all nodes.
+%%   2. Write <File>.change at all nodes.
+%%   3. Move <File>.change to <File>
+%%   4. Remove <File>.backup at all nodes.
+%%
+%% If one of the steps above fails, all steps are recovered from
+%% (as long as possible), except for 4 which is allowed to fail.
+%%-----------------------------------------------------------------
+safe_write_file_m(File, Data, Masters) ->
+    Backup = File ++ ".backup",
+    Change = File ++ ".change",
+    case at_all_masters(Masters, ?MODULE, do_copy_files,
+			[File, [Backup]]) of
+	ok ->
+	    case at_all_masters(Masters, ?MODULE, do_write_file,
+				[Change, Data]) of
+		ok ->
+		    case at_all_masters(Masters, file, rename,
+					[Change, File]) of
+			ok ->
+			    remove_files(all, [Backup, Change], Masters),
+			    ok;
+			{error, {Master, R}} ->
+			    takewhile(Master, Masters, file, rename,
+				      [Backup, File]),
+			    remove_files(all, [Backup, Change], Masters),
+			    throw({error, {Master, R, rename,
+					   filename:basename(Change),
+					   filename:basename(File)}})
+		    end;
+		{error, {Master, R}} ->
+		    remove_files(all, [Backup, Change], Masters),
+		    throw({error, {Master, R, write, filename:basename(Change)}})
+	    end;
+	{error, {Master, R}} ->
+	    remove_files(Master, [Backup], Masters),
+	    throw({error, {Master, R, backup,
+			   filename:basename(File),
+			   filename:basename(Backup)}})
+    end.
+
+%%-----------------------------------------------------------------
+%% Figure out which applications that have changed version between the
+%% two releases. The paths for these applications must always be
+%% updated, even if the relup script does not load any modules. See
+%% OTP-9402.
+%%
+%% A different situation is when the same application version is used
+%% in old and new release, but the path has changed. This is not
+%% handled here - instead it must be explicitely indicated by the
+%% 'update_paths' option to release_handler:install_release/2 if the
+%% code path shall be updated then.
+%% -----------------------------------------------------------------
+get_new_libs([{App,Vsn,_LibDir}|CurrentLibs], NewLibs) ->
+    case lists:keyfind(App,1,NewLibs) of
+	{App,NewVsn,_} = LibInfo when NewVsn =/= Vsn ->
+	    [LibInfo | get_new_libs(CurrentLibs,NewLibs)];
+	_ ->
+	    get_new_libs(CurrentLibs,NewLibs)
+    end;
+get_new_libs([],_) ->
+    [].

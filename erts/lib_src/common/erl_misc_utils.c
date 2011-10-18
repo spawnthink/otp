@@ -55,6 +55,12 @@
 #  ifdef HAVE_UNISTD_H
 #    include <unistd.h>
 #  endif
+#  if defined(_SC_NPROC_CONF) && !defined(_SC_NPROCESSORS_CONF)
+#    define _SC_NPROCESSORS_CONF _SC_NPROC_CONF
+#  endif
+#  if defined(_SC_NPROC_ONLN) && !defined(_SC_NPROCESSORS_ONLN)
+#    define _SC_NPROCESSORS_ONLN _SC_NPROC_ONLN
+#  endif
 #  if (defined(NO_SYSCONF) || !defined(_SC_NPROCESSORS_CONF))
 #    ifdef HAVE_SYS_SYSCTL_H
 #      include <sys/sysctl.h>
@@ -1511,7 +1517,7 @@ const char* parse_topology_spec_group(erts_cpu_info_t *cpuinfo, const char* xml,
 	}
     }
 
-    if (cacheLevel == 0) {
+    if (parentCacheLevel == 0) {
 	*core_p = 0;
 	*processor_p = (*processor_p)++;
     } else {

@@ -31,12 +31,15 @@
 	           nodes=[],
 		   init=[],
 		   label=[],
+		   profile=[],
 		   logdir=["."],
+		   logopts=[],
 		   cover=[],
 		   config=[],
 		   userconfig=[],
 		   event_handler=[],
 		   ct_hooks=[],
+		   enable_builtin_hooks=true,
 		   include=[],
 		   multiply_timetraps=[],
 		   scale_timetraps=[],
@@ -58,3 +61,5 @@
 
 -define(missing_suites_info, "missing_suites.info").
 -define(ct_config_txt, ct_config_plain).
+
+-define(ct_profile_file, ".common_test").

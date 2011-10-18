@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1999-2010. All Rights Reserved.
+ * Copyright Ericsson AB 1999-2011. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -150,7 +150,7 @@ void erts_bits_destroy_state(ERL_BITS_PROTO_0);
  * NBYTES(x) returns the number of bytes needed to store x bits.
  */
 
-#define NBYTES(x)  (((x) + 7) >> 3) 
+#define NBYTES(x)  (((Uint64)(x) + (Uint64) 7) >> 3) 
 #define BYTE_OFFSET(ofs) ((Uint) (ofs) >> 3)
 #define BIT_OFFSET(ofs) ((ofs) & 7)
 

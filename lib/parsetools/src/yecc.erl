@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2010. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -133,12 +133,15 @@
 %%% Interface to erl_compile.
 
 compile(Input0, Output0, 
-        #options{warning = WarnLevel, verbose=Verbose, includes=Includes}) ->
+        #options{warning = WarnLevel, verbose=Verbose, includes=Includes,
+		 specific=Specific}) ->
     Input = shorten_filename(Input0),
     Output = shorten_filename(Output0),
     Includefile = lists:sublist(Includes, 1),
+    Werror = proplists:get_bool(warnings_as_errors, Specific),
     Opts = [{parserfile,Output}, {includefile,Includefile}, {verbose,Verbose},
-            {report_errors, true}, {report_warnings, WarnLevel > 0}],
+            {report_errors, true}, {report_warnings, WarnLevel > 0},
+	    {warnings_as_errors, Werror}],
     case file(Input, Opts) of
         {ok, _OutFile} ->
             ok;
@@ -278,8 +281,8 @@ options(Options0) when is_list(Options0) ->
                              (T) -> [T]
                           end, Options0),
         options(Options, [file_attributes, includefile, parserfile, 
-                          report_errors, report_warnings, return_errors, 
-                          return_warnings, time, verbose], [])
+                          report_errors, report_warnings, warnings_as_errors,
+                          return_errors, return_warnings, time, verbose], [])
     catch error: _ -> badarg
     end;
 options(Option) ->
@@ -333,6 +336,7 @@ default_option(includefile) -> [];
 default_option(parserfile) -> [];
 default_option(report_errors) -> true;
 default_option(report_warnings) -> true;
+default_option(warnings_as_errors) -> false;
 default_option(return_errors) -> false;
 default_option(return_warnings) -> false;
 default_option(time) -> false;
@@ -341,6 +345,7 @@ default_option(verbose) -> false.
 atom_option(file_attributes) -> {file_attributes, true};
 atom_option(report_errors) -> {report_errors, true};
 atom_option(report_warnings) -> {report_warnings, true};
+atom_option(warnings_as_errors) -> {warnings_as_errors,true};
 atom_option(return_errors) -> {return_errors, true};
 atom_option(return_warnings) -> {return_warnings, true};
 atom_option(time) -> {time, true};
@@ -409,11 +414,15 @@ infile(Parent, Infilex, Options) ->
              {error, Reason} ->
                  add_error(St0#yecc.infile, none, {file_error, Reason}, St0)
          end,
-    case St#yecc.errors of
-        [] -> ok;
+    case {St#yecc.errors, werror(St)} of
+        {[], false} -> ok;
         _ -> _ = file:delete(St#yecc.outfile)
     end,
     Parent ! {self(), yecc_ret(St)}.
+
+werror(St) ->
+    St#yecc.warnings =/= []
+	andalso member(warnings_as_errors, St#yecc.options).
 
 outfile(St0) ->
     case file:open(St0#yecc.outfile, [write, delayed_write]) of
@@ -777,17 +786,23 @@ yecc_ret(St0) ->
     report_warnings(St),
     Es = pack_errors(St#yecc.errors),
     Ws = pack_warnings(St#yecc.warnings),
+    Werror = werror(St),
     if 
+        Werror ->
+            do_error_return(St, Es, Ws);
         Es =:= [] -> 
             case member(return_warnings, St#yecc.options) of
                 true -> {ok, St#yecc.outfile, Ws};
                 false -> {ok, St#yecc.outfile}
             end;
         true -> 
-            case member(return_errors, St#yecc.options) of
-                true -> {error, Es, Ws};
-                false -> error
-            end
+            do_error_return(St, Es, Ws)
+    end.
+
+do_error_return(St, Es, Ws) ->
+    case member(return_errors, St#yecc.options) of
+        true -> {error, Es, Ws};
+        false -> error
     end.
 
 check_expected(St0) ->
@@ -837,14 +852,22 @@ report_errors(St) ->
     end.
 
 report_warnings(St) ->
-    case member(report_warnings, St#yecc.options) of
+    Werror = member(warnings_as_errors, St#yecc.options),
+    Prefix = case Werror of
+		 true -> "";
+		 false -> "Warning: "
+	     end,
+    ReportWerror = Werror andalso member(report_errors, St#yecc.options),
+    case member(report_warnings, St#yecc.options) orelse ReportWerror of
         true ->
             foreach(fun({File,{none,Mod,W}}) -> 
-                            io:fwrite(<<"~s: Warning: ~s\n">>, 
-                                      [File,Mod:format_error(W)]);
+                            io:fwrite(<<"~s: ~s~s\n">>,
+                                      [File,Prefix,
+				       Mod:format_error(W)]);
                        ({File,{Line,Mod,W}}) -> 
-                            io:fwrite(<<"~s:~w: Warning: ~s\n">>, 
-                                      [File,Line,Mod:format_error(W)])
+                            io:fwrite(<<"~s:~w: ~s~s\n">>,
+                                      [File,Line,Prefix,
+				       Mod:format_error(W)])
                     end, sort(St#yecc.warnings));
         false -> 
             ok

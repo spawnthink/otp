@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2002-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2002-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -106,10 +106,6 @@ text_max() ->
 
 create_text_table() ->
     " (FIELD long)". %Oracle long is variable length char data
-
-%-------------------------------------------------------------------------
-create_unicode_table() ->
-    " (FIELD nvarchar(50))".
 
 %-------------------------------------------------------------------------
 create_timestamp_table() ->
@@ -231,8 +227,8 @@ param_select() ->
 
 %-------------------------------------------------------------------------
 describe_integer() ->
-    {ok,[{"INT1",{sql_decimal,38,0}},{"INT2",{sql_decimal,38,0}},
-	 {"INT3",{sql_decimal,38,0}}]}.
+    {ok,[{"MYINT1",{sql_decimal,38,0}},{"MYINT2",{sql_decimal,38,0}},
+	 {"MYINT3",{sql_decimal,38,0}}]}.
     
 describe_string() ->
     {ok,[{"STR1",{sql_char,10}},                           
@@ -243,4 +239,4 @@ describe_string() ->
 describe_floating() ->
     {ok,[{"F",sql_double},{"R",sql_double},{"D",sql_double}]}.
 describe_dec_num() ->
-    {ok,[{"DEC",{sql_decimal,9,3}},{"NUM",{sql_decimal,9,2}}]}.
+    {ok,[{"MYDEC",{sql_decimal,9,3}},{"MYNUM",{sql_decimal,9,2}}]}.

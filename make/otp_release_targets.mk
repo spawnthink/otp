@@ -1,7 +1,7 @@
 # 
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1997-2010. All Rights Reserved.
+# Copyright Ericsson AB 1997-2011. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -74,10 +74,10 @@ ifneq ($(XML_FILES),)
 # ----------------------------------------------------
 # Generation of application index data
 # ----------------------------------------------------
-$(HTMLDIR)/$(APPLICATION).eix: $(XML_FILES)
+$(HTMLDIR)/$(APPLICATION).eix: $(XML_FILES) $(SPECS_FILES)
 	date=`date +"%B %e %Y"`; \
 	$(XSLTPROC) --stringparam docgen "$(DOCGEN)" \
-		--stringparam gendate "$$date" --stringparam appname "$(APPLICATION)" --stringparam appver "$(VSN)" --xinclude  \
+		--stringparam gendate "$$date" --stringparam appname "$(APPLICATION)" --stringparam appver "$(VSN)" --xinclude $(TOP_SPECS_PARAM)  \
 		-path $(DOCGEN)/priv/docbuilder_dtd -path $(DOCGEN)/priv/dtd_html_entities $(DOCGEN)/priv/xsl/db_eix.xsl book.xml >  $@ 
 
 docs: $(HTMLDIR)/$(APPLICATION).eix

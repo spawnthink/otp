@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2005-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2005-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -312,8 +312,8 @@ validate_uri(RequestURI) ->
 	{'EXIT',_Reason} ->
 	    {error, {bad_request, {malformed_syntax, RequestURI}}};
 	_ ->
-	    Path = format_request_uri(UriNoQueryNoHex),
-	    Path2=[X||X<-string:tokens(Path, "/"),X=/="."], %% OTP-5938
+	    Path  = format_request_uri(UriNoQueryNoHex),
+	    Path2 = [X||X<-string:tokens(Path, "/\\"),X=/="."], 
 	    validate_path( Path2,0, RequestURI)
     end.
 

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2006-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2006-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -30,7 +30,7 @@ connection_string() ->
 	{unix, sunos} ->
 	    "DSN=Postgres;UID=odbctest";
 	{unix, linux} ->
-	    Size = erlang:system_info(wordsize),
+	    Size = erlang:system_info({wordsize, external}),
 	    linux_dist_connection_string(Size)  
     end.
 
@@ -43,7 +43,12 @@ linux_dist_connection_string(4) ->
     end;
 
 linux_dist_connection_string(_) ->
-    "DSN=PostgresLinux64;UID=odbctest".
+    case linux_dist() of
+	"ubuntu" ->
+	    "DSN=PostgresLinux64Ubuntu;UID=odbctest";
+	_ ->
+	    "DSN=PostgresLinux64;UID=odbctest"
+    end.
 			
 linux_dist() ->
     case file:read_file("/etc/issue") of
@@ -132,10 +137,6 @@ text_max() ->
    2147483646. % 2147483647. %% 2^31 - 1 
 
 create_text_table() ->
-    " (FIELD text)". 
-
-%-------------------------------------------------------------------------
-create_unicode_table() ->
     " (FIELD text)". 
 
 %-------------------------------------------------------------------------
@@ -275,9 +276,9 @@ param_select() ->
 
 %-------------------------------------------------------------------------
 describe_integer() ->
-    {ok,[{"int1",sql_smallint},
-	 {"int2",sql_integer},
-	 {"int3",sql_integer}]}.
+    {ok,[{"myint1",sql_smallint},
+	 {"myint2",sql_integer},
+	 {"myint3",sql_integer}]}.
 
 describe_string() ->
     {ok,[{"str1",{sql_char,10}},                           
@@ -288,7 +289,7 @@ describe_string() ->
 describe_floating() ->
     {ok,[{"f",sql_real},{"r",sql_real},{"d",{sql_float,15}}]}.
 describe_dec_num() ->
-    {ok,[{"dec",{sql_numeric,9,3}},{"num",{sql_numeric,9,2}}]}.
+    {ok,[{"mydec",{sql_numeric,9,3}},{"mynum",{sql_numeric,9,2}}]}.
 
 describe_timestamp() ->
     {ok, [{"field", sql_timestamp}]}.

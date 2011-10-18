@@ -387,19 +387,15 @@ do {								\
 } while (0)
 
 struct ErtsSchedulerData_ {
-
-#ifdef ERTS_SMP
     /*
      * Keep X registers first (so we get as many low
      * numbered registers as possible in the same cache
      * line).
      */
-#if !HALFWORD_HEAP
-    Eterm save_reg[ERTS_X_REGS_ALLOCATED]; /* X registers */
-#else
-    Eterm *save_reg;
-#endif
-    FloatDef freg[MAX_REG];	/* Floating point registers. */
+    Eterm* x_reg_array;		/* X registers */
+    FloatDef* f_reg_array;	/* Floating point registers. */
+
+#ifdef ERTS_SMP
     ethr_tid tid;		/* Thread id */
     struct erl_bits_state erl_bits_state; /* erl_bits.c state */
     void *match_pseudo_process; /* erl_db_util.c:db_prog_match() */
@@ -1599,11 +1595,11 @@ erts_sched_poke(ErtsSchedulerSleepInfo *ssi)
 {
     erts_aint32_t flags;
     ERTS_THR_MEMORY_BARRIER;
-    flags = erts_smp_atomic32_read(&ssi->flags);
+    flags = erts_smp_atomic32_read_nob(&ssi->flags);
     ASSERT(!(flags & ERTS_SSI_FLG_SLEEPING)
 	   || (flags & ERTS_SSI_FLG_WAITING));
     if (flags & ERTS_SSI_FLG_SLEEPING) {
-	flags = erts_smp_atomic32_band(&ssi->flags, ~ERTS_SSI_FLGS_SLEEP);
+	flags = erts_smp_atomic32_read_band_nob(&ssi->flags, ~ERTS_SSI_FLGS_SLEEP);
 	erts_sched_finish_poke(ssi, flags);
     }
 }

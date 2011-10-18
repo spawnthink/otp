@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2008-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2008-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -28,10 +28,10 @@
 -export([init/1, terminate/1, lookup/2, update/3, delete/2, foldl/3, 
 	 select_session/2]). 
 
--type key() :: {{host(), port_num()}, session_id()} |  {port_num(), session_id()}.
+-type key() :: {{host(), inet:port_number()}, session_id()} |  {inet:port_number(), session_id()}.
 
 %%--------------------------------------------------------------------
--spec init(list()) -> cache_ref(). %% Returns reference to the cache (opaque)    
+-spec init(list()) -> db_handle(). %% Returns reference to the cache (opaque)
 %%
 %% Description: Return table reference. Called by ssl_manager process. 
 %%--------------------------------------------------------------------
@@ -39,7 +39,7 @@ init(_) ->
     ets:new(cache_name(), [set, protected]).
 
 %%--------------------------------------------------------------------
--spec terminate(cache_ref()) -> any(). %%    
+-spec terminate(db_handle()) -> any().
 %%
 %% Description: Handles cache table at termination of ssl manager. 
 %%--------------------------------------------------------------------
@@ -47,7 +47,7 @@ terminate(Cache) ->
     ets:delete(Cache).
 
 %%--------------------------------------------------------------------
--spec lookup(cache_ref(), key()) -> #session{} | undefined.
+-spec lookup(db_handle(), key()) -> #session{} | undefined.
 %%
 %% Description: Looks up a cach entry. Should be callable from any
 %% process.
@@ -61,7 +61,7 @@ lookup(Cache, Key) ->
     end.
 
 %%--------------------------------------------------------------------
--spec update(cache_ref(), key(), #session{}) -> any().
+-spec update(db_handle(), key(), #session{}) -> any().
 %%
 %% Description: Caches a new session or updates a already cached one.
 %% Will only be called from the ssl_manager process.
@@ -70,7 +70,7 @@ update(Cache, Key, Session) ->
     ets:insert(Cache, {Key, Session}).
 
 %%--------------------------------------------------------------------
--spec delete(cache_ref(), key()) -> any().
+-spec delete(db_handle(), key()) -> any().
 %%
 %% Description: Delets a cache entry.
 %% Will only be called from the ssl_manager process.
@@ -79,7 +79,7 @@ delete(Cache, Key) ->
     ets:delete(Cache, Key).
 
 %%--------------------------------------------------------------------
--spec foldl(fun(), term(), cache_ref()) -> term().
+-spec foldl(fun(), term(), db_handle()) -> term().
 %%
 %% Description: Calls Fun(Elem, AccIn) on successive elements of the
 %% cache, starting with AccIn == Acc0. Fun/2 must return a new
@@ -91,7 +91,7 @@ foldl(Fun, Acc0, Cache) ->
     ets:foldl(Fun, Acc0, Cache).
   
 %%--------------------------------------------------------------------
--spec select_session(cache_ref(), {host(), port_num()} | port_num()) -> [#session{}].
+-spec select_session(db_handle(), {host(), inet:port_number()} | inet:port_number()) -> [#session{}].
 %%
 %% Description: Selects a session that could be reused. Should be callable
 %% from any process.

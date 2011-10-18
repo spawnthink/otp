@@ -41,8 +41,10 @@
 %% Tests concept permanent, transient and temporary 
 -export([ permanent_normal/1, transient_normal/1,
 	  temporary_normal/1,
+	  permanent_shutdown/1, transient_shutdown/1,
+	  temporary_shutdown/1,
 	  permanent_abnormal/1, transient_abnormal/1,
-	  temporary_abnormal/1]).
+	  temporary_abnormal/1, temporary_bystander/1]).
 
 %% Restart strategy tests 
 -export([ one_for_one/1,
@@ -71,10 +73,11 @@ all() ->
      {group, restart_simple_one_for_one},
      {group, restart_rest_for_one},
      {group, normal_termination},
+     {group, shutdown_termination},
      {group, abnormal_termination}, child_unlink, tree,
      count_children_memory, do_not_save_start_parameters_for_temporary_children,
      do_not_save_child_specs_for_temporary_children,
-     simple_one_for_one_scale_many_temporary_children].
+     simple_one_for_one_scale_many_temporary_children, temporary_bystander].
 
 groups() -> 
     [{sup_start, [],
@@ -86,6 +89,8 @@ groups() ->
        sup_stop_brutal_kill]},
      {normal_termination, [],
       [permanent_normal, transient_normal, temporary_normal]},
+     {shutdown_termination, [],
+      [permanent_shutdown, transient_shutdown, temporary_shutdown]},
      {abnormal_termination, [],
       [permanent_abnormal, transient_abnormal,
        temporary_abnormal]},
@@ -114,10 +119,9 @@ end_per_group(_GroupName, Config) ->
     Config.
 
 init_per_testcase(count_children_memory, Config) ->
-    MemoryState = erlang:system_info(allocator),
-    case count_children_allocator_test(MemoryState) of
-	true -> Config;
-	false ->
+    try erlang:memory() of
+	_ -> Config
+    catch error:notsup ->
 	    {skip, "+Meamin used during test; erlang:memory/1 not available"}
     end;
 init_per_testcase(_Case, Config) ->
@@ -550,6 +554,87 @@ temporary_normal(Config) when is_list(Config) ->
     [0,0,0,0] = get_child_counts(sup_test).
 
 %%-------------------------------------------------------------------------
+permanent_shutdown(doc) ->
+    ["A permanent child should always be restarted"];
+permanent_shutdown(suite) -> [];
+permanent_shutdown(Config) when is_list(Config) ->
+    {ok, SupPid} = start_link({ok, {{one_for_one, 2, 3600}, []}}),
+    Child1 = {child1, {supervisor_1, start_child, []}, permanent, 1000,
+	      worker, []},
+
+    {ok, CPid1} = supervisor:start_child(sup_test, Child1),
+
+    terminate(SupPid, CPid1, child1, shutdown),
+
+    [{child1, CPid2 ,worker,[]}] = supervisor:which_children(sup_test),
+    case is_pid(CPid2) of
+	true ->
+	    ok;
+	false ->
+	    test_server:fail({permanent_child_not_restarted, Child1})
+    end,
+    [1,1,0,1] = get_child_counts(sup_test),
+
+    terminate(SupPid, CPid2, child1, {shutdown, some_info}),
+
+    [{child1, CPid3 ,worker,[]}] = supervisor:which_children(sup_test),
+    case is_pid(CPid3) of
+	true ->
+	    ok;
+	false ->
+	    test_server:fail({permanent_child_not_restarted, Child1})
+    end,
+
+    [1,1,0,1] = get_child_counts(sup_test).
+
+%%-------------------------------------------------------------------------
+transient_shutdown(doc) ->
+    ["A transient child should not be restarted if it exits with " 
+     "reason shutdown or {shutdown,Term}"];
+transient_shutdown(suite) -> [];
+transient_shutdown(Config) when is_list(Config) ->
+    {ok, SupPid} = start_link({ok, {{one_for_one, 2, 3600}, []}}),
+    Child1 = {child1, {supervisor_1, start_child, []}, transient, 1000,
+	      worker, []},
+
+    {ok, CPid1} = supervisor:start_child(sup_test, Child1),
+
+    terminate(SupPid, CPid1, child1, shutdown),
+
+    [{child1,undefined,worker,[]}] = supervisor:which_children(sup_test),
+    [1,0,0,1] = get_child_counts(sup_test),
+
+    {ok, CPid2} = supervisor:restart_child(sup_test, child1),
+
+    terminate(SupPid, CPid2, child1, {shutdown, some_info}),
+
+    [{child1,undefined,worker,[]}] = supervisor:which_children(sup_test),
+    [1,0,0,1] = get_child_counts(sup_test).
+
+%%-------------------------------------------------------------------------
+temporary_shutdown(doc) ->
+    ["A temporary process should never be restarted"];
+temporary_shutdown(suite) -> [];
+temporary_shutdown(Config) when is_list(Config) ->
+    {ok, SupPid} = start_link({ok, {{one_for_one, 2, 3600}, []}}),
+    Child1 = {child1, {supervisor_1, start_child, []}, temporary, 1000,
+	      worker, []},
+
+    {ok, CPid1} = supervisor:start_child(sup_test, Child1),
+
+    terminate(SupPid, CPid1, child1, shutdown),
+
+    [] = supervisor:which_children(sup_test),
+    [0,0,0,0] = get_child_counts(sup_test),
+
+    {ok, CPid2} = supervisor:start_child(sup_test, Child1),
+
+    terminate(SupPid, CPid2, child1, {shutdown, some_info}),
+
+    [] = supervisor:which_children(sup_test),
+    [0,0,0,0] = get_child_counts(sup_test).
+
+%%-------------------------------------------------------------------------
 permanent_abnormal(doc) ->
     ["A permanent child should always be restarted"];
 permanent_abnormal(suite) -> [];
@@ -606,6 +691,37 @@ temporary_abnormal(Config) when is_list(Config) ->
 
     [] = supervisor:which_children(sup_test),
     [0,0,0,0] = get_child_counts(sup_test).
+
+%%-------------------------------------------------------------------------
+temporary_bystander(doc) ->
+    ["A temporary process killed as part of a rest_for_one or one_for_all "
+     "restart strategy should not be restarted given its args are not "
+     " saved. Otherwise the supervisor hits its limit and crashes."];
+temporary_bystander(suite) -> [];
+temporary_bystander(_Config) ->
+    Child1 = {child1, {supervisor_1, start_child, []}, permanent, 100,
+	      worker, []},
+    Child2 = {child2, {supervisor_1, start_child, []}, temporary, 100,
+	      worker, []},
+    {ok, SupPid1} = supervisor:start_link(?MODULE, {ok, {{one_for_all, 2, 300}, []}}),
+    {ok, SupPid2} = supervisor:start_link(?MODULE, {ok, {{rest_for_one, 2, 300}, []}}),
+    unlink(SupPid1), % otherwise we crash with it
+    unlink(SupPid2), % otherwise we crash with it
+    {ok, CPid1} = supervisor:start_child(SupPid1, Child1),
+    {ok, _CPid2} = supervisor:start_child(SupPid1, Child2),
+    {ok, CPid3} = supervisor:start_child(SupPid2, Child1),
+    {ok, _CPid4} = supervisor:start_child(SupPid2, Child2),
+    terminate(SupPid1, CPid1, child1, normal),
+    terminate(SupPid2, CPid3, child1, normal),
+    timer:sleep(350),
+    catch link(SupPid1),
+    catch link(SupPid2),
+    %% The supervisor would die attempting to restart child2
+    true = erlang:is_process_alive(SupPid1),
+    true = erlang:is_process_alive(SupPid2),
+    %% Child2 has not been restarted
+    [{child1, _, _, _}] = supervisor:which_children(SupPid1),
+    [{child1, _, _, _}] = supervisor:which_children(SupPid2).
 
 %%-------------------------------------------------------------------------
 one_for_one(doc) ->
@@ -1032,17 +1148,6 @@ count_children_memory(Config) when is_list(Config) ->
     [terminate(SupPid, Pid, child, kill) || {undefined, Pid, worker, _Modules} <- Children3],
     [1,0,0,0] = get_child_counts(sup_test).
 
-count_children_allocator_test(MemoryState) ->
-    Allocators = [temp_alloc, eheap_alloc, binary_alloc, ets_alloc,
-		  driver_alloc, sl_alloc, ll_alloc, fix_alloc, std_alloc,
-		  sys_alloc],
-    MemoryStateList = element(4, MemoryState),
-    AllocTypes = [lists:keyfind(Alloc, 1, MemoryStateList)
-		  || Alloc <- Allocators],
-    AllocStates = [lists:keyfind(e, 1, AllocValue)
-		   || {_Type, AllocValue} <- AllocTypes],
-    lists:all(fun(State) -> State == {e, true} end, AllocStates).
-
 %%-------------------------------------------------------------------------
 do_not_save_start_parameters_for_temporary_children(doc) ->
     ["Temporary children shall not be restarted so they should not "
@@ -1261,6 +1366,13 @@ terminate(_, ChildPid, _, shutdown) ->
     exit(ChildPid, shutdown),
     receive
 	{'DOWN', Ref, process, ChildPid, shutdown} ->
+	    ok
+    end;
+terminate(_, ChildPid, _, {shutdown, Term}) ->
+    Ref = erlang:monitor(process, ChildPid),
+    exit(ChildPid, {shutdown, Term}),
+    receive
+	{'DOWN', Ref, process, ChildPid, {shutdown, Term}} ->
 	    ok
     end;
 terminate(_, ChildPid, _, normal) ->

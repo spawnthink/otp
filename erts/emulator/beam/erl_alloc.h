@@ -99,6 +99,14 @@ unsigned long erts_alc_test(unsigned long,
 
 #define ERTS_ALC_MIN_LONG_LIVED_TIME	(10*60*1000)
 
+#if HALFWORD_HEAP
+#define ERTS_IS_SBMBC_ALLOCATOR_NO__(NO) \
+  ((NO) == ERTS_ALC_A_SBMBC || (NO) == ERTS_ALC_A_SBMBC_LOW)
+#else
+#define ERTS_IS_SBMBC_ALLOCATOR_NO__(NO) \
+  ((NO) == ERTS_ALC_A_SBMBC)
+#endif
+
 typedef struct {
     int alloc_util;
     int enabled;
@@ -172,10 +180,10 @@ void *erts_realloc(ErtsAlcType_t type, void *ptr, Uint size);
 void erts_free(ErtsAlcType_t type, void *ptr);
 void *erts_alloc_fnf(ErtsAlcType_t type, Uint size);
 void *erts_realloc_fnf(ErtsAlcType_t type, void *ptr, Uint size);
-void *erts_alloc_permanent_cache_aligned(ErtsAlcType_t type, Uint size);
-
 
 #endif /* #if !ERTS_ALC_DO_INLINE */
+
+void *erts_alloc_permanent_cache_aligned(ErtsAlcType_t type, Uint size);
 
 #ifndef ERTS_CACHE_LINE_SIZE
 /* Assume a cache line size of 64 bytes */
@@ -240,18 +248,6 @@ void *erts_realloc_fnf(ErtsAlcType_t type, void *ptr, Uint size)
 	erts_allctrs[ERTS_ALC_T2A(type)].extra,
 	ptr,
 	size);
-}
-
-ERTS_ALC_INLINE
-void *erts_alloc_permanent_cache_aligned(ErtsAlcType_t type, Uint size)
-{
-    UWord v = (UWord) erts_alloc(type, size + (ERTS_CACHE_LINE_SIZE-1));
-
-    if (v & ERTS_CACHE_LINE_MASK) {
-	v = (v & ~ERTS_CACHE_LINE_MASK) + ERTS_CACHE_LINE_SIZE;
-    }
-    ASSERT((v & ERTS_CACHE_LINE_MASK) == 0);
-    return (void*)v;
 }
 
 #endif /* #if ERTS_ALC_DO_INLINE || defined(ERTS_ALC_INTERNAL__) */

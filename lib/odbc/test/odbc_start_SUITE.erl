@@ -39,11 +39,18 @@
 %% variable, but should NOT alter/remove any existing entries.
 %%--------------------------------------------------------------------
 init_per_suite(Config) ->
-    case code:which(odbc) of
-	non_existing ->
-	    {skip, "No ODBC built"};
-	_ ->
-	    [{tableName, odbc_test_lib:unique_table_name()} | Config]
+    case odbc_test_lib:skip() of
+	true ->
+	    {skip, "ODBC not supported"};
+	false ->
+	    case code:which(odbc) of
+		non_existing ->
+		    {skip, "No ODBC built"};
+		_ ->
+		    %% Make sure odbc is not already started
+		    odbc:stop(),
+		    [{tableName, odbc_test_lib:unique_table_name()} | Config]
+	    end
     end.
 
 %%--------------------------------------------------------------------
@@ -125,14 +132,16 @@ start(doc) ->
 start(suite) -> 
     [];
 start(Config) when is_list(Config) -> 
-    {error,odbc_not_started} = odbc:connect(?RDBMS:connection_string(), []),
+    PlatformOptions = odbc_test_lib:platform_options(),
+	{error,odbc_not_started} = odbc:connect(?RDBMS:connection_string(),
+					    PlatformOptions),
     odbc:start(),
-    case odbc:connect(?RDBMS:connection_string(), []) of
+    case odbc:connect(?RDBMS:connection_string(), PlatformOptions) of
 	{ok, Ref0} ->
 	    ok = odbc:disconnect(Ref0),
 	    odbc:stop(),
 	    {error,odbc_not_started} = 
-		odbc:connect(?RDBMS:connection_string(), []),
+		odbc:connect(?RDBMS:connection_string(), PlatformOptions),
 	    start_odbc(transient),
 	    start_odbc(permanent);
 	{error, odbc_not_started} ->
@@ -144,7 +153,7 @@ start(Config) when is_list(Config) ->
     
 start_odbc(Type) ->
     ok = odbc:start(Type),
-    case odbc:connect(?RDBMS:connection_string(), []) of
+    case odbc:connect(?RDBMS:connection_string(), odbc_test_lib:platform_options()) of
 	{ok, Ref} ->
 	    ok = odbc:disconnect(Ref),
 	    odbc:stop();

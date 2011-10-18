@@ -24,17 +24,19 @@
 
 -include_lib("public_key/include/public_key.hrl"). 
 
+%% Looks like it does for backwards compatibility reasons
+-record(sslsocket, {fd = nil, pid = nil}).
+
 -type reason()            :: term().
 -type reply()             :: term().
 -type msg()               :: term().
 -type from()              :: term().
--type host()		  :: string() | tuple().
--type port_num()	  :: integer().
+-type host()		  :: inet:ip_address() | inet:hostname().
 -type session_id()        :: 0 | binary().
 -type tls_version()       :: {integer(), integer()}.
 -type tls_atom_version()  :: sslv3 | tlsv1.
--type cache_ref()         :: term().
--type certdb_ref()        :: term().
+-type certdb_ref()        :: reference().
+-type db_handle()         :: term().
 -type key_algo()          :: null | rsa | dhe_rsa | dhe_dss | dh_anon.
 -type der_cert()          :: binary().
 -type private_key()       :: #'RSAPrivateKey'{} | #'DSAPrivateKey'{}.
@@ -99,10 +101,12 @@
 	  renegotiate_at,
 	  secure_renegotiate,
 	  debug,
-	  hibernate_after % undefined if not hibernating,
+	  hibernate_after,% undefined if not hibernating,
                           % or number of ms of inactivity
 			  % after which ssl_connection will
                           % go into hibernation
+	  %% This option should only be set to true by inet_tls_dist
+	  erl_dist = false 
 	  }).
 
 -record(socket_options,

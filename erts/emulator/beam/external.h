@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1996-2010. All Rights Reserved.
+ * Copyright Ericsson AB 1996-2011. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -160,6 +160,7 @@ Uint erts_encode_dist_ext_size(Eterm, Uint32, ErtsAtomCacheMap *);
 void erts_encode_dist_ext(Eterm, byte **, Uint32, ErtsAtomCacheMap *);
 
 Uint erts_encode_ext_size(Eterm);
+Uint erts_encode_ext_size_2(Eterm, unsigned);
 Uint erts_encode_ext_size_ets(Eterm);
 void erts_encode_ext(Eterm, byte **);
 byte* erts_encode_ext_ets(Eterm, byte *, struct erl_off_heap_header** ext_off_heap);

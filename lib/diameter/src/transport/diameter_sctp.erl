@@ -411,6 +411,14 @@ transition({diameter, {send, Msg}}, S) ->
 transition({diameter, {close, Pid}}, #transport{parent = Pid}) ->
     stop;
 
+%% TLS over SCTP is described in RFC 3436 but has limitations as
+%% described in RFC 6083. The latter describes DTLS over SCTP, which
+%% addresses these limitations, DTLS itself being described in RFC
+%% 4347. TLS is primarily used over TCP, which the current RFC 3588
+%% draft acknowledges by equating TLS with TLS/TCP and DTLS/SCTP.
+transition({diameter, {tls, _Ref, _Type, _Bool}}, _) ->
+    stop;
+
 %% Listener process has died.
 transition({'DOWN', _, process, Pid, _}, #transport{mode = {accept, Pid}}) ->
     stop;
@@ -525,7 +533,22 @@ recv({[#sctp_sndrcvinfo{stream = Id}], Bin}, #transport{parent = Pid})
 
 recv({[], #sctp_shutdown_event{assoc_id = Id}},
      #transport{assoc_id = Id}) ->
-    stop.
+    stop;
+
+%% Note that diameter_sctp(3) documents that sctp_events cannot be
+%% specified in the list of options passed to gen_sctp and that
+%% gen_opts/1 guards against this. This is to ensure that we know what
+%% events to expect and also to ensure that we receive
+%% #sctp_sndrcvinfo{} with each incoming message (data_io_event =
+%% true). Adaptation layer events (ie. #sctp_adaptation_event{}) are
+%% disabled by default so don't handle it. We could simply disable
+%% events we don't react to but don't.
+
+recv({[], #sctp_paddr_change{}}, _) ->
+    ok;
+
+recv({[], #sctp_pdapi_event{}}, _) ->
+    ok.
 
 %% up/1
 
@@ -591,7 +614,7 @@ f([], _, _) ->
 
 %% assoc_id/1
 
-assoc_id(#sctp_shutdown_event{assoc_id = Id}) ->  %% undocumented
+assoc_id(#sctp_shutdown_event{assoc_id = Id}) ->
     Id;
 assoc_id(#sctp_assoc_change{assoc_id = Id}) ->
     Id;

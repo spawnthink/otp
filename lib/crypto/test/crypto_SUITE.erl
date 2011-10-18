@@ -138,14 +138,15 @@ link_test_2(Drv) ->
 	    Libs = os:cmd(Cmd),
 	    io:format("~p\n", [Libs]),
 	    case string:str(Libs, "libcrypto") of
-		0 -> ok;
-		_ ->
+		0 -> 
 		    case ?t:is_commercial() of
 			true ->
-			    ?t:fail({libcrypto,not_statically_linked});
+			    ?t:fail({libcrypto,statically_linked});
 			false ->
-			    {comment,"Not statically linked (OK for open-source platform)"}
-		    end
+			    {comment,"Statically linked (OK for open-source platform)"}
+		    end;
+		_ ->
+		    ok
 	    end
     end.
 
@@ -878,10 +879,17 @@ rand_uniform_aux_test(0) ->
 rand_uniform_aux_test(N) ->
     ?line L = N*1000,
     ?line H = N*100000+1,
+    ?line crypto_rand_uniform(L, H),
+    ?line crypto_rand_uniform(-L, L),
+    ?line crypto_rand_uniform(-H, -L),
+    ?line crypto_rand_uniform(-H, L),
+    ?line rand_uniform_aux_test(N-1).
+
+crypto_rand_uniform(L,H) ->
     ?line R1 = crypto:rand_uniform(L, H),
     ?line t(R1 >= L),
-    ?line t(R1 < H),
-    ?line rand_uniform_aux_test(N-1).
+    ?line t(R1 < H).
+
 
 %%
 %%

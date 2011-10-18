@@ -100,15 +100,7 @@
 		   | 'enotblk' | 'enotdir' | 'enotsup' | 'enxio'  | 'eperm'
 		   | 'epipe'   | 'erofs'   | 'espipe'  | 'esrch'  | 'estale'
 		   | 'exdev'.
--type bindings()  :: erl_eval:binding_struct().
-
--type date()      :: {Year :: pos_integer(),
-                      Month :: pos_integer(),
-                      Day ::pos_integer()}.
--type time()      :: {Hour :: non_neg_integer(),
-                      Minute :: non_neg_integer(),
-                      Second :: non_neg_integer()}.
--type date_time() :: {date(), time()}.
+-type date_time() :: calendar:datetime().
 -type posix_file_advise() :: 'normal' | 'sequential' | 'random'
                            | 'no_reuse' | 'will_need' | 'dont_need'.
 
@@ -920,7 +912,7 @@ eval(File) ->
 
 -spec eval(Filename, Bindings) -> ok | {error, Reason} when
       Filename :: name(),
-      Bindings :: bindings(),
+      Bindings :: erl_eval:binding_struct(),
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
 
@@ -948,7 +940,7 @@ path_eval(Path, File) ->
              {ok, FullName} | {error, Reason} when
       Path :: [Dir :: name()],
       Filename :: name(),
-      Bindings :: bindings(),
+      Bindings :: erl_eval:binding_struct(),
       FullName :: filename(),
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
@@ -979,7 +971,7 @@ script(File) ->
 
 -spec script(Filename, Bindings) -> {ok, Value} | {error, Reason} when
       Filename :: name(),
-      Bindings :: bindings(),
+      Bindings :: erl_eval:binding_struct(),
       Value :: term(),
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
@@ -1010,7 +1002,7 @@ path_script(Path, File) ->
           {ok, Value, FullName} | {error, Reason} when
       Path :: [Dir :: name()],
       Filename :: name(),
-      Bindings :: bindings(),
+      Bindings :: erl_eval:binding_struct(),
       Value :: term(),
       FullName :: filename(),
       Reason :: posix() | badarg | terminated | system_limit
@@ -1171,7 +1163,7 @@ path_open_first([Path|Rest], Name, Mode, LastError) ->
 	{error, _} = Error ->
 	    Error;
 	FilePath ->
-	    FileName = filename:join(FilePath, Name),
+	    FileName = fname_join(FilePath, Name),
 	    case open(FileName, Mode) of
 		{ok, Fd} ->
 		    {ok, Fd, FileName};
@@ -1183,6 +1175,11 @@ path_open_first([Path|Rest], Name, Mode, LastError) ->
     end;
 path_open_first([], _Name, _Mode, LastError) ->
     {error, LastError}.
+
+fname_join(".", Name) ->
+    Name;
+fname_join(Dir, Name) ->
+    filename:join(Dir, Name).
 
 %%%-----------------------------------------------------------------
 %%% Utility functions.

@@ -1006,8 +1006,7 @@ ok
       <name name="table" arity="2"/>
       <fsummary>Return a QLC query handle.</fsummary>
       <desc>
-        <p><marker id="qlc_table"></marker>
-          Returns a QLC (Query List
+        <p><marker id="qlc_table"></marker>Returns a QLC (Query List
           Comprehension) query handle. The module <c>qlc</c>
           implements a query language aimed mainly at Mnesia but Ets
           tables, Dets tables, and lists are also recognized by <c>qlc</c>
@@ -1105,7 +1104,7 @@ fun(X) -> {continue, X} end.            </pre>
             <p>Terminate the traversal and return <c>[<anno>Value</anno> | Acc]</c>.</p>
           </item>
         </taglist>
-        <p>Any other value returned by <c><anno>Fun</anno></c> terminates the
+        <p>Any other value <c><anno>OtherValue</anno></c> returned by <c><anno>Fun</anno></c> terminates the
           traversal and is immediately returned.
           </p>
       </desc>

@@ -224,7 +224,7 @@ version(File) ->
       MD5 :: binary().
 
 md5(File) ->
-    case catch read_significant_chunks(File) of
+    case catch read_significant_chunks(File, md5_chunks()) of
 	{ok, {Module, Chunks0}} ->
 	    Chunks = filter_funtab(Chunks0),
 	    {ok, {Module, erlang:md5([C || {_Id, C} <- Chunks])}};
@@ -395,7 +395,7 @@ strip_fils(Files) ->
 
 %% -> {ok, {Mod, FileName}} | {ok, {Mod, binary()}} | throw(Error)
 strip_file(File) ->
-    {ok, {Mod, Chunks}} = read_significant_chunks(File),
+    {ok, {Mod, Chunks}} = read_significant_chunks(File, significant_chunks()),
     {ok, Stripped0} = build_module(Chunks),
     Stripped = compress(Stripped0),
     case File of
@@ -453,8 +453,8 @@ is_useless_chunk("CInf") -> true;
 is_useless_chunk(_) -> false.
 
 %% -> {ok, {Module, Chunks}} | throw(Error)
-read_significant_chunks(File) ->
-    case read_chunk_data(File, significant_chunks(), [allow_missing_chunks]) of
+read_significant_chunks(File, ChunkList) ->
+    case read_chunk_data(File, ChunkList, [allow_missing_chunks]) of
 	{ok, {Module, Chunks0}} ->
 	    Mandatory = mandatory_chunks(),
 	    Chunks = filter_significant_chunks(Chunks0, Mandatory, File, Module),
@@ -835,12 +835,15 @@ file_error(FileName, {error, Reason}) ->
 error(Reason) ->
     throw({error, ?MODULE, Reason}).
 
-
-%% The following chunks are significant when calculating the MD5 for a module,
-%% and also the modules that must be retained when stripping a file.
-%% They are listed in the order that they should be MD5:ed.
+%% The following chunks must be kept when stripping a BEAM file.
 
 significant_chunks() ->
+    ["Line" | md5_chunks()].
+
+%% The following chunks are significant when calculating the MD5
+%% for a module. They are listed in the order that they should be MD5:ed.
+
+md5_chunks() ->
     ["Atom", "Code", "StrT", "ImpT", "ExpT", "FunT", "LitT"].
 
 %% The following chunks are mandatory in every Beam file.
@@ -893,13 +896,17 @@ call_crypto_server(Req) ->
 	gen_server:call(?CRYPTO_KEY_SERVER, Req, infinity)
     catch
 	exit:{noproc,_} ->
-	    start_crypto_server(),
-	    erlang:yield(),
-	    call_crypto_server(Req)
+	    %% Not started.
+	    call_crypto_server_1(Req);
+	exit:{normal,_} ->
+	    %% The process finished just as we called it.
+	    call_crypto_server_1(Req)
     end.
 
-start_crypto_server() ->
-    gen_server:start({local,?CRYPTO_KEY_SERVER}, ?MODULE, [], []).
+call_crypto_server_1(Req) ->
+    gen_server:start({local,?CRYPTO_KEY_SERVER}, ?MODULE, [], []),
+    erlang:yield(),
+    call_crypto_server(Req).
 
 -spec init([]) -> {'ok', #state{}}.
 

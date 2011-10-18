@@ -28,6 +28,7 @@
 static int static_cntA; /* zero by default */
 static int static_cntB = NIF_SUITE_LIB_VER * 100;
 
+static ERL_NIF_TERM atom_false;
 static ERL_NIF_TERM atom_self;
 static ERL_NIF_TERM atom_ok;
 static ERL_NIF_TERM atom_join;
@@ -40,7 +41,18 @@ typedef struct
     CallInfo* call_history;
     NifModPrivData* nif_mod;
     union { ErlNifResourceType* t; long l; } rt_arr[2];
-}PrivData;
+} PrivData;
+
+/*
+ * Use a union for pointer type conversion to avoid compiler warnings
+ * about strict-aliasing violations with gcc-4.1. gcc >= 4.2 does not
+ * emit the warning.
+ * TODO: Reconsider use of union once gcc-4.1 is obsolete?
+ */
+typedef union {
+    void* vp;
+    struct make_term_info* p;
+} mti_t;
 
 void add_call(ErlNifEnv* env, PrivData* data, const char* func_name)
 {
@@ -103,7 +115,7 @@ static int load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     msgenv_resource_type =  enif_open_resource_type(env,NULL,"nif_SUITE.msgenv",
 						    msgenv_dtor,
 						    ERL_NIF_RT_CREATE, NULL);
-
+    atom_false = enif_make_atom(env,"false");
     atom_self = enif_make_atom(env,"self");
     atom_ok = enif_make_atom(env,"ok");
     atom_join = enif_make_atom(env,"join");
@@ -481,6 +493,45 @@ error:
     return enif_make_atom(env,"error");
 }
 
+static ERL_NIF_TERM echo_int(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    int sint;
+    unsigned uint;
+    long slong;
+    unsigned long ulong;
+    ErlNifSInt64 sint64;
+    ErlNifUInt64 uint64;    
+    ERL_NIF_TERM sint_term = atom_false,   uint_term = atom_false;
+    ERL_NIF_TERM slong_term = atom_false,  ulong_term = atom_false;
+    ERL_NIF_TERM sint64_term = atom_false, uint64_term = atom_false;
+
+    if (enif_get_int(env, argv[0], &sint)) {
+	sint_term = enif_make_int(env, sint);
+    }
+    if (enif_get_uint(env, argv[0], &uint)) {
+	uint_term = enif_make_uint(env, uint);
+    }
+    if (enif_get_long(env, argv[0], &slong)) {
+	slong_term = enif_make_long(env, slong);
+    }
+    if (enif_get_ulong(env, argv[0], &ulong)) {
+	ulong_term = enif_make_ulong(env, ulong);
+    }
+    if (enif_get_int64(env, argv[0], &sint64)) {
+	sint64_term = enif_make_int64(env, sint64);
+    }
+    if (enif_get_uint64(env, argv[0], &uint64)) {
+	uint64_term = enif_make_uint64(env, uint64);
+    }
+    return enif_make_list6(env, sint_term, uint_term, slong_term, ulong_term, sint64_term, uint64_term);
+}
+
+static ERL_NIF_TERM type_sizes(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    return enif_make_tuple2(env, enif_make_int(env, sizeof(int)),
+			    enif_make_int(env, sizeof(long)));
+}
+
 static ERL_NIF_TERM tuple_2_list(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     int arity = -1;
@@ -667,7 +718,7 @@ static ERL_NIF_TERM get_resource_type(ErlNifEnv* env, int argc, const ERL_NIF_TE
 static ERL_NIF_TERM alloc_resource(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     ErlNifBinary data_bin;
-    union { ErlNifResourceType* t; long l;} type;
+    union { ErlNifResourceType* t; long l; } type;
     union { void* p; long l;} data;
     if (!enif_get_long(env, argv[0], &type.l)
 	|| !enif_inspect_binary(env, argv[1], &data_bin)
@@ -691,7 +742,7 @@ static ERL_NIF_TERM make_resource(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
 static ERL_NIF_TERM make_new_resource(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     ErlNifBinary data_bin;
-    union { ErlNifResourceType* t; long l;} type;
+    union { ErlNifResourceType* t; long l; } type;
     void* data;
     ERL_NIF_TERM ret;
     if (!enif_get_long(env, argv[0], &type.l)
@@ -709,7 +760,7 @@ static ERL_NIF_TERM make_new_resource(ErlNifEnv* env, int argc, const ERL_NIF_TE
 static ERL_NIF_TERM make_new_resource_binary(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     ErlNifBinary data_bin;
-    union { struct binary_resource* p; void* vp; long l;} br;
+    union { struct binary_resource* p; void* vp; long l; } br;
     void* buf;
     ERL_NIF_TERM ret;
     if (!enif_inspect_binary(env, argv[0], &data_bin)
@@ -1229,10 +1280,7 @@ static void msgenv_dtor(ErlNifEnv* env, void* obj)
 
 static ERL_NIF_TERM clear_msgenv(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    union {
-	void* vp;
-	struct make_term_info* p;
-    }mti;
+    mti_t mti;
     if (!enif_get_resource(env, argv[0], msgenv_resource_type, &mti.vp)) {
 	return enif_make_badarg(env);
     }
@@ -1245,7 +1293,7 @@ static ERL_NIF_TERM clear_msgenv(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
 static ERL_NIF_TERM grow_blob(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    union { void* vp; struct make_term_info* p; }mti;
+    mti_t mti;
     ERL_NIF_TERM term;
     if (!enif_get_resource(env, argv[0], msgenv_resource_type, &mti.vp)
 	|| (argc>2 && !enif_get_uint(env,argv[2], &mti.p->n))) {
@@ -1261,7 +1309,7 @@ static ERL_NIF_TERM grow_blob(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
 
 static ERL_NIF_TERM send_blob(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    union { void* vp; struct make_term_info* p; }mti;
+    mti_t mti;
     ErlNifPid to;
     ERL_NIF_TERM copy;
     int res;
@@ -1276,7 +1324,7 @@ static ERL_NIF_TERM send_blob(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
 
 static ERL_NIF_TERM send3_blob(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    union { void* vp; struct make_term_info* p; }mti;
+    mti_t mti;
     ErlNifPid to;
     ERL_NIF_TERM copy;
     int res;
@@ -1294,7 +1342,7 @@ static ERL_NIF_TERM send3_blob(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
 void* threaded_sender(void *arg)
 {
 
-    union { void* vp; struct make_term_info* p; }mti;
+    mti_t mti;
     mti.vp = arg;
 
     enif_mutex_lock(mti.p->mtx);
@@ -1309,7 +1357,7 @@ void* threaded_sender(void *arg)
 
 static ERL_NIF_TERM send_blob_thread(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    union { void* vp; struct make_term_info* p; }mti;
+    mti_t mti;
     ERL_NIF_TERM copy;
     if (!enif_get_resource(env, argv[0], msgenv_resource_type, &mti.vp)
 	|| !enif_get_local_pid(env,argv[1], &mti.p->to_pid)) {
@@ -1335,7 +1383,7 @@ static ERL_NIF_TERM send_blob_thread(ErlNifEnv* env, int argc, const ERL_NIF_TER
 
 static ERL_NIF_TERM join_send_thread(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    union { void* vp; struct make_term_info* p; }mti;
+    mti_t mti;
     int err;
     if (!enif_get_resource(env, argv[0], msgenv_resource_type, &mti.vp)) {
 	return enif_make_badarg(env);
@@ -1352,7 +1400,7 @@ static ERL_NIF_TERM join_send_thread(ErlNifEnv* env, int argc, const ERL_NIF_TER
 
 static ERL_NIF_TERM copy_blob(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    union { void* vp; struct make_term_info* p; }mti;
+    mti_t mti;
     if (!enif_get_resource(env, argv[0], msgenv_resource_type, &mti.vp)) {
 	return enif_make_badarg(env);
     }
@@ -1371,6 +1419,14 @@ static ERL_NIF_TERM send_term(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
     ret = enif_send(env, &pid, menv, enif_make_copy(menv, argv[1]));
     enif_free_env(menv);
     return enif_make_int(env, ret);
+}
+
+static ERL_NIF_TERM reverse_list(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+    ERL_NIF_TERM rev_list;
+
+    if(!enif_make_reverse_list(env, argv[0], &rev_list))
+	return enif_make_atom(env, "badarg");
+    return rev_list;
 }
 
 static ErlNifFunc nif_funcs[] =
@@ -1417,7 +1473,10 @@ static ErlNifFunc nif_funcs[] =
     {"send_blob_thread", 3, send_blob_thread},
     {"join_send_thread", 1, join_send_thread},
     {"copy_blob", 1, copy_blob},
-    {"send_term", 2, send_term}
+    {"send_term", 2, send_term},
+    {"reverse_list",1, reverse_list},
+    {"echo_int", 1, echo_int},
+    {"type_sizes", 0, type_sizes}
 };
 
 ERL_NIF_INIT(nif_SUITE,nif_funcs,load,reload,upgrade,unload)

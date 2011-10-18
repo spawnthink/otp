@@ -14,10 +14,8 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$
-%%
 %% @copyright 2001-2003 Richard Carlsson
-%% @author Richard Carlsson <richardc@it.uu.se>
+%% @author Richard Carlsson <carlsson.richard@gmail.com>
 %% @see edoc
 %% @end
 %% =====================================================================
@@ -40,7 +38,7 @@
 -import(edoc_report, [report/2, warning/2]).
 
 -include("edoc.hrl").
--include("xmerl.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 -define(FILE_BASE, "/").
 
@@ -405,8 +403,13 @@ escape_uri([C | Cs]) ->
 escape_uri([]) ->
     [].
 
-escape_byte(C) ->
-    "%" ++ hex_octet(C).
+escape_byte(C) when C >= 0, C =< 255 ->
+    [$%, hex_digit(C bsr 4), hex_digit(C band 15)].
+
+hex_digit(N) when N >= 0, N =< 9 ->
+    N + $0;
+hex_digit(N) when N > 9, N =< 15 ->
+    N + $a - 10.
 
 % utf8([C | Cs]) when C > 16#7f ->
 %     [((C band 16#c0) bsr 6) + 16#c0, C band 16#3f ++ 16#80 | utf8(Cs)];
@@ -414,13 +417,6 @@ escape_byte(C) ->
 %     [C | utf8(Cs)];
 % utf8([]) ->
 %     [].
-
-hex_octet(N) when N =< 9 ->
-    [$0 + N];
-hex_octet(N) when N > 15 ->
-    hex_octet(N bsr 4) ++ hex_octet(N band 15);
-hex_octet(N) ->
-    [N - 10 + $a].
 
 %% Please note that URI are *not* file names. Don't use the stdlib
 %% 'filename' module for operations on (any parts of) URI.
@@ -494,7 +490,7 @@ uri_get_file(File0) ->
 uri_get_http(URI) ->
     %% Try using option full_result=false
     case catch {ok, httpc:request(get, {URI,[]}, [],
-				 [{full_result, false}])} of
+				  [{full_result, false}])} of
 	{'EXIT', _} ->
 	    uri_get_http_r10(URI);
 	Result ->

@@ -30,7 +30,59 @@
   </header>
   <p>This document describes the changes made to the SSL application.</p>
   
-  <section>
+  <section><title>SSL 4.1.6</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    replace "a ssl" with "an ssl" reindent
+	    pkix_path_validation/3 Trivial documentation fixes
+	    (Thanks to Christian von Roques )</p>
+          <p>
+	    Own Id: OTP-9464</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Adds function clause to avoid denial of service attack.
+	    Thanks to Vinod for reporting this vulnerability.</p>
+          <p>
+	    Own Id: OTP-9364</p>
+        </item>
+        <item>
+          <p>
+	    Error handling code now takes care of inet:getopts/2 and
+	    inets:setopts/2 crashes. Thanks to Richard Jones for
+	    reporting this.</p>
+          <p>
+	    Own Id: OTP-9382</p>
+        </item>
+        <item>
+          <p>
+	    Support explicit use of packet option httph and httph_bin</p>
+          <p>
+	    Own Id: OTP-9461</p>
+        </item>
+        <item>
+          <p>
+	    Decoding of hello extensions could fail to come to the
+	    correct conclusion due to an error in a binary match
+	    pattern. Thanks to Ben Murphy.</p>
+          <p>
+	    Own Id: OTP-9589</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section>
     <title>SSL 4.1.5</title>
     
     <section><title>Improvements and New Features</title>
@@ -554,7 +606,7 @@
             Own Id: OTP-8224</p>
         </item>
         <item>
-            <p>A ssl:ssl_accept/3 could crash a connection if the
+            <p>An ssl:ssl_accept/3 could crash a connection if the
             timing was wrong.</p> <p>Removed info message if the
             socket closed without a proper disconnect from the ssl
             layer. </p> <p>ssl:send/2 is now blocking until the
@@ -770,7 +822,7 @@
         <item>
           <p>
             The new ssl implementation released as a alfa in this
-            version supports upgrading of a tcp connection to a ssl
+            version supports upgrading of a tcp connection to an ssl
             connection so that http client and servers may implement
             RFC 2817.</p>
           <p>
@@ -789,7 +841,7 @@
             very crippled as the control of the ssl-socket was deep
             down in openssl making it hard if not impossible to
             support all inet options, ipv6 and upgrade of a tcp
-            connection to a ssl connection. The alfa version has a
+            connection to an ssl connection. The alfa version has a
             few limitations that will be removed before the ssl-4.0
             release. Main differences and limitations in the alfa are
             listed below.</p>

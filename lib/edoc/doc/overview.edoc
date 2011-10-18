@@ -3,7 +3,7 @@
 	EDoc overview page
 
 
-@author Richard Carlsson <richardc@it.uu.se>
+@author Richard Carlsson <carlsson.richard@gmail.com>
 @copyright 2003-2006 Richard Carlsson
 @version {@version}
 @title Welcome to EDoc
@@ -277,12 +277,12 @@ The following tags can be used before a module declaration:
       Examples:
 ```%% @author Richard Carlsson'''
 
-```%% @author Richard Carlsson <richardc@it.uu.se>
+```%% @author Richard Carlsson <carlsson.richard@gmail.com>
    %%   [http://user.it.uu.se/~richardc/]'''
 
-```%% @author <richardc@it.uu.se>'''
+```%% @author <carlsson.richard@gmail.com>'''
 
-```%% @author richardc@it.uu.se [http://user.it.uu.se/~richardc/]'''
+```%% @author carlsson.richard@gmail.com [http://user.it.uu.se/~richardc/]'''
       </dd>
 
 <dt><a name="mtag-copyright">`@copyright'</a></dt>
@@ -1084,10 +1084,11 @@ Details:
       the Erlang programming language.</li>
   <li>`boolean()' is the subset of `atom()' consisting
       of the atoms `true' and `false'.</li>
-  <li>`char()' is a subset of
-      `integer()' representing character codes.</li>
+  <li>`char()' is the subset of `integer()' representing
+      Unicode character codes: hex 000000-10FFFF.</li>
   <li>`tuple()' is the set of all tuples `{...}'.</li>
-  <li>`list(T)' is just an alias for `[T]'.</li>
+  <li>`list(T)' is just an alias for `[T]'; list() is an alias
+      for `list(any())', i.e., `[any()]'.</li>
   <li>`nil()' is an alias for the empty list `[]'.</li>
   <li>`cons(H,T)' is the list constructor. This is usually not
       used directly. It is possible to recursively define `list(T)

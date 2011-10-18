@@ -26,7 +26,7 @@
 	 cleanup_crash_dumps/0, crash_dump_dir/0, tar_crash_dumps/0,
 	 get_username/0, get_os_family/0, 
 	 hostatom/0, hostatom/1, hoststr/0, hoststr/1,
-	 framework_call/2,framework_call/3,
+	 framework_call/2,framework_call/3,framework_call/4,
 	 format_loc/1, package_str/1, package_atom/1,
 	 call_trace/1]).
 -include("test_server_internal.hrl").
@@ -51,18 +51,19 @@ timetrap(Timeout0, Scale, Pid) ->
     Timeout = if not Scale -> Timeout0;
 		 true -> test_server:timetrap_scale_factor() * Timeout0
 	      end,
+    TruncTO = trunc(Timeout),
     receive
-    after trunc(Timeout) ->
-	    Line = test_server:get_loc(Pid),
+    after TruncTO ->
+	    MFLs = test_server:get_loc(Pid),
 	    Mon = erlang:monitor(process, Pid),
 	    Trap = 
 		case get(test_server_init_or_end_conf) of
 		    undefined ->
-			{timetrap_timeout,trunc(Timeout),Line};
+			{timetrap_timeout,TruncTO,MFLs};
 		    InitOrEnd ->
-			{timetrap_timeout,trunc(Timeout),Line,InitOrEnd}
+			{timetrap_timeout,TruncTO,MFLs,InitOrEnd}
 		end,
-	    exit(Pid,Trap),
+	    exit(Pid, Trap),
 	    receive
 		{'DOWN', Mon, process, Pid, _} ->
 		    ok
@@ -540,8 +541,9 @@ format_loc({Mod,Func}) when is_atom(Func) ->
 format_loc({Mod,Line}) when is_integer(Line) -> 
     %% ?line macro is used
     ModStr = package_str(Mod),
-    case lists:reverse(ModStr) of
-	[$E,$T,$I,$U,$S,$_|_]  ->
+    case {lists:member(no_src, get(test_server_logopts)),
+	  lists:reverse(ModStr)} of
+	{false,[$E,$T,$I,$U,$S,$_|_]}  ->
 	    io_lib:format("{~s,<a href=\"~s~s#~w\">~w</a>}",
 			  [ModStr,downcase(ModStr),?src_listing_ext,
 			   round_to_10(Line),Line]);
@@ -557,8 +559,9 @@ format_loc1([{Mod,Func,Line}|Rest]) ->
     ["              ",format_loc1({Mod,Func,Line}),",\n"|format_loc1(Rest)];
 format_loc1({Mod,Func,Line}) ->
     ModStr = package_str(Mod),
-    case lists:reverse(ModStr) of
-	[$E,$T,$I,$U,$S,$_|_]  ->
+    case {lists:member(no_src, get(test_server_logopts)),
+	  lists:reverse(ModStr)} of
+	{false,[$E,$T,$I,$U,$S,$_|_]}  ->
 	    io_lib:format("{~s,~w,<a href=\"~s~s#~w\">~w</a>}",
 			  [ModStr,Func,downcase(ModStr),?src_listing_ext,
 			   round_to_10(Line),Line]);

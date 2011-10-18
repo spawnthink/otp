@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1997-2010. All Rights Reserved.
+ * Copyright Ericsson AB 1997-2011. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -69,7 +69,8 @@ static void erl_init(int ncpu);
 #define ERTS_MIN_COMPAT_REL 7
 
 #ifdef ERTS_SMP
-erts_smp_atomic_t erts_writing_erl_crash_dump;
+erts_smp_atomic32_t erts_writing_erl_crash_dump;
+erts_tsd_key_t erts_is_crash_dumping_key;
 #else
 volatile int erts_writing_erl_crash_dump = 0;
 #endif
@@ -125,6 +126,8 @@ int erts_atom_table_size = ATOM_LIMIT;	/* Maximum number of atoms */
 int erts_modified_timing_level;
 
 int erts_no_crash_dump = 0;	/* Use -d to suppress crash dump. */
+
+int erts_no_line_info = 0;	/* -L: Don't load line information */
 
 /*
  * Other global variables.
@@ -323,7 +326,7 @@ init_shared_memory(int argc, char **argv)
 #endif
 
     global_gen_gcs = 0;
-    global_max_gen_gcs = (Uint16) erts_smp_atomic32_read(&erts_max_gen_gcs);
+    global_max_gen_gcs = (Uint16) erts_smp_atomic32_read_nob(&erts_max_gen_gcs);
     global_gc_flags = erts_default_process_flags;
 
     erts_global_offheap.mso = NULL;
@@ -646,12 +649,14 @@ early_init(int *argc, char **argv) /*
     erts_lc_init();
 #endif
 #ifdef ERTS_SMP
-    erts_smp_atomic_init(&erts_writing_erl_crash_dump, 0L);
+    erts_smp_atomic32_init_nob(&erts_writing_erl_crash_dump, 0L);
+    erts_tsd_key_create(&erts_is_crash_dumping_key);
 #else
     erts_writing_erl_crash_dump = 0;
 #endif
 
-    erts_smp_atomic32_init(&erts_max_gen_gcs, (erts_aint32_t) ((Uint16) -1));
+    erts_smp_atomic32_init_nob(&erts_max_gen_gcs,
+			       (erts_aint32_t) ((Uint16) -1));
 
     erts_pre_init_process();
 #if defined(USE_THREADS) && !defined(ERTS_SMP)
@@ -803,9 +808,11 @@ early_init(int *argc, char **argv) /*
 #if defined(HIPE)
     hipe_signal_init();	/* must be done very early */
 #endif
-    erl_sys_init();
 
     erl_sys_args(argc, argv);
+
+    /* Creates threads on Windows that depend on the arguments, so has to be after erl_sys_args */
+    erl_sys_init();
 
     erts_ets_realloc_always_moves = 0;
     erts_ets_always_compress = 0;
@@ -856,7 +863,8 @@ erl_start(int argc, char **argv)
     envbufsz = sizeof(envbuf);
     if (erts_sys_getenv("ERL_FULLSWEEP_AFTER", envbuf, &envbufsz) == 0) {
 	Uint16 max_gen_gcs = atoi(envbuf);
-	erts_smp_atomic32_set(&erts_max_gen_gcs, (erts_aint32_t) max_gen_gcs);
+	erts_smp_atomic32_set_nob(&erts_max_gen_gcs,
+				  (erts_aint32_t) max_gen_gcs);
     }
 
     envbufsz = sizeof(envbuf);
@@ -932,7 +940,9 @@ erl_start(int argc, char **argv)
 	case 'l':
 	    display_loads++;
 	    break;
-
+	case 'L':
+	    erts_no_line_info = 1;
+	    break;
 	case 'v':
 #ifdef DEBUG
 	    if (argv[i][2] == '\0') {

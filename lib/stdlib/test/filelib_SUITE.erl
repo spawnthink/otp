@@ -97,11 +97,12 @@ wildcard_errors(Config) when is_list(Config) ->
 
 wcc(Wc, Error) ->
     {'EXIT',{{badpattern,Error},
-	     [{filelib,compile_wildcard,1}|_]}} = (catch filelib:compile_wildcard(Wc)),
+	     [{filelib,compile_wildcard,1,_}|_]}} =
+	(catch filelib:compile_wildcard(Wc)),
     {'EXIT',{{badpattern,Error},
-	     [{filelib,wildcard,1}|_]}} = (catch filelib:wildcard(Wc)),
+	     [{filelib,wildcard,1,_}|_]}} = (catch filelib:wildcard(Wc)),
     {'EXIT',{{badpattern,Error},
-	     [{filelib,wildcard,2}|_]}} = (catch filelib:wildcard(Wc, ".")).
+	     [{filelib,wildcard,2,_}|_]}} = (catch filelib:wildcard(Wc, ".")).
 
 do_wildcard_1(Dir, Wcf0) ->
     do_wildcard_2(Dir, Wcf0),
@@ -243,7 +244,7 @@ otp_5960(doc) ->
     ["Test that filelib:ensure_dir/1 returns ok or {error,Reason}"];
 otp_5960(Config) when is_list(Config) ->
     ?line PrivDir = ?config(priv_dir, Config),
-    ?line Dir = filename:join(PrivDir, otp_5960_dir),
+    ?line Dir = filename:join(PrivDir, "otp_5960_dir"),
     ?line Name1 = filename:join(Dir, name1),
     ?line Name2 = filename:join(Dir, name2),
     ?line ok = filelib:ensure_dir(Name1), % parent is created
@@ -268,7 +269,7 @@ otp_5960(Config) when is_list(Config) ->
 
 ensure_dir_eexist(Config) when is_list(Config) ->
     ?line PrivDir = ?config(priv_dir, Config),
-    ?line Dir = filename:join(PrivDir, ensure_dir_eexist),
+    ?line Dir = filename:join(PrivDir, "ensure_dir_eexist"),
     ?line Name = filename:join(Dir, "same_name_as_file_and_dir"),
     ?line ok = filelib:ensure_dir(Name),
     ?line ok = file:write_file(Name, <<"some string\n">>),

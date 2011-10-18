@@ -51,11 +51,14 @@ unix_cases() ->
     [target_system] ++ RunErlCases ++ cases().
 
 win32_cases() -> 
-    cases().
+    [{group,release} | cases()].
 
 %% Cases that can be run on all platforms
 cases() ->
-    [otp_2740, otp_2760, otp_5761, instructions, eval_appup].
+    [otp_2740, otp_2760, otp_5761, otp_9402, otp_9417,
+     otp_9395_check_old_code, otp_9395_check_and_purge,
+     otp_9395_update_many_mods, otp_9395_rm_many_mods,
+     instructions, eval_appup, supervisor_which_children_timeout].
 
 groups() ->
     [{release,[],
@@ -148,6 +151,10 @@ init_per_group(release_gg, Config0) ->
 end_per_group(release, Config) ->
     Dog = ?t:timetrap(?default_timeout),
     stop_print_proc(),
+    case os:type() of
+	{win32,_} -> delete_all_services();
+	_ -> ok
+    end,
     delete_release(Config),
     ?t:timetrap_cancel(Dog),
     Config;
@@ -168,6 +175,10 @@ end_per_testcase(Case, Config) ->
     ?t:format("~n======= start end_per_testcase =======~n",[]),
     Dog=?config(watchdog, Config),
     test_server:timetrap_cancel(Dog),
+
+    try apply(?MODULE,Case,[cleanup,Config])
+    catch error:undef -> ok
+    end,
 
     %% DEBUG
     case ?config(tc_status,Config) of
@@ -206,10 +217,6 @@ end_per_testcase(Case, Config) ->
     %% immediately restarted by heart and the test cases wait until
     %% the node is actually up and running -- see wait_nodes_up/2)
     file:delete("sasl_erl_crash.dump"),
-
-    try apply(?MODULE,Case,[cleanup,Config])
-    catch error:undef -> ok
-    end,
     ok.
 
 gg_node_snames(Config) ->
@@ -224,7 +231,10 @@ gg_node_snames(Config) ->
 no_run_erl(Config) when is_list(Config) ->
     {comment, "No run_erl program"}.
 
-
+break(Config) ->
+	erlang:display(test_break),
+	?t:break(priv_dir(Config)),
+	ok.
 
 %% Test upgrade and downgrade of erts
 upgrade(Conf) when is_list(Conf) ->
@@ -323,7 +333,7 @@ client1(Conf) when is_list(Conf) ->
 
     %% Copy the P1G release to a directory for use in this testcase
     ok = copy_installed(Conf,p1g_install,[Master]),
-    ok = copy_client(Conf,Master,Client,"start_cli1"),
+    ok = copy_client(Conf,Master,Client,client1),
 
     %% start the master node
     [TestNode] = start_nodes(Conf,[Master],"client1"),
@@ -348,7 +358,7 @@ client2(Conf) when is_list(Conf) ->
 
     %% Copy the P1G release to a directory for use in this testcase
     ok = copy_installed(Conf,p1g_install,[Master]),
-    ok = copy_client(Conf,Master,Client,"start_cli2"),
+    ok = copy_client(Conf,Master,Client,client2),
 
     %% start the master node
     [TestNode] = start_nodes(Conf,[Master],"client2"),
@@ -386,7 +396,7 @@ instructions(Conf) when is_list(Conf) ->
           {stop, [aa]},
           {apply, {?MODULE, no_cc, []}},
           {start, [aa]}],
-    {ok, _} = release_handler_1:eval_script(S1, [], []),
+    {ok, _} = release_handler_1:eval_script(S1),
 
     case whereis(cc) of
         Pid2 when is_pid(Pid2) -> ok;
@@ -396,17 +406,17 @@ instructions(Conf) when is_list(Conf) ->
     %% Make bb run old version of b.
     S2 = [point_of_no_return,
           {remove, {b, soft_purge, soft_purge}}],
-    {ok, [{b, soft_purge}]} = release_handler_1:eval_script(S2, [], []),
+    {ok, [{b, soft_purge}]} = release_handler_1:eval_script(S2),
     check_bstate("first", [FirstBB]),
 
     false = code:is_loaded(b),
-    {error,{old_processes,b}} = release_handler_1:eval_script(S2,[],[]),
+    {error,{old_processes,b}} = release_handler_1:eval_script(S2),
     check_bstate("first", [FirstBB]),
 
     %% Let supervisor restart bb with new code
     S3 = [point_of_no_return,
           {purge, [b]}],
-    {ok, []} = release_handler_1:eval_script(S3, [], []),
+    {ok, []} = release_handler_1:eval_script(S3),
     ok = wait_for(bb),
     check_bstate("second", []),
     SecondBB = whereis(bb),
@@ -439,7 +449,7 @@ instructions(Conf) when is_list(Conf) ->
     %% Let supervisor restart bb yet another time
     S4 = [point_of_no_return,
           {remove, {b, brutal_purge, soft_purge}}],
-    {ok, HopefullyEmpty} = release_handler_1:eval_script(S4, [], []),
+    {ok, HopefullyEmpty} = release_handler_1:eval_script(S4),
     ok = wait_for(bb),
     FourthBB = whereis(bb),
 
@@ -513,6 +523,29 @@ no_cc() ->
 %%%-----------------------------------------------------------------
 
 %%-----------------------------------------------------------------
+%% release_handler_1:get_supervised_procs/0 test
+%%-----------------------------------------------------------------
+supervisor_which_children_timeout(Conf) ->
+    PrivDir = priv_dir(Conf),
+    Dir = filename:join(PrivDir,"supervisor_which_children_timeout"),
+    DataDir = ?config(data_dir,Conf),
+    LibDir = filename:join([DataDir,release_handler_timeouts]),
+
+    Rel1 = create_and_install_fake_first_release(Dir,[{dummy,"0.1",LibDir}]),
+
+    {ok, Node} = t_start_node(supervisor_which_children_timeout, Rel1, []),
+    Proc = rpc:call(Node, erlang, whereis, [dummy_sup_2]),
+    ok = rpc:call(Node, sys, suspend, [Proc]),
+    Result = {badrpc, {'EXIT', {suspended_supervisor, _}}} =
+        rpc:call(Node, release_handler_1, get_supervised_procs, []),
+    ?t:format("release_handler_1:get_supervised_procs/0: ~p~n", [Result]),
+
+    ok.
+
+supervisor_which_children_timeout(cleanup, Conf) ->
+    stop_node(node_name(supervisor_which_children_timeout)).
+
+%%-----------------------------------------------------------------
 %% Ticket: OTP-2740
 %% Slogan: vsn not numeric doesn't work so good in release_handling
 %%-----------------------------------------------------------------
@@ -549,7 +582,7 @@ otp_2760(Conf) ->
     LibDir = filename:join([DataDir,app1_app2,lib1]),
 
     Rel1 = create_and_install_fake_first_release(Dir,[{app1,"1.0",LibDir}]),
-    Rel2 = create_fake_upgrade_release(Dir,"after",[],{Rel1,Rel1,[LibDir]}),
+    Rel2 = create_fake_upgrade_release(Dir,"after",[],{[Rel1],[Rel1],[LibDir]}),
     Rel2Dir = filename:dirname(Rel2),
 
     %% Start a node with Rel1.boot and check that the app1 module is loaded
@@ -559,12 +592,14 @@ otp_2760(Conf) ->
     %% Execute the relup script and check that app1 is unloaded
     {ok, [{"after", [{_Rel1Vsn, _Descr, Script}], _}]} =
 	file:consult(filename:join(Rel2Dir, "relup")),
-    {ok, []} = rpc:call(Node, release_handler_1, eval_script,
-			      [Script, [], []]),
+    {ok, []} = rpc:call(Node, release_handler_1, eval_script, [Script]),
     false = rpc:call(Node, code, is_loaded, [app1]),
 
-    true = stop_node(Node),
     ok.
+
+otp_2760(cleanup,_Conf) ->
+    stop_node(node_name(otp_2760)).
+
 
 %% Test upgrade using other filesystem than the defined in OTP and
 %% option {update_paths, true}
@@ -591,7 +626,7 @@ otp_5761(Conf) when is_list(Conf) ->
 				       "2",
 				       [{app1,"2.0",LibDir2},
 					{app2,"1.0",LibDir2}],
-				       {Rel1,Rel1,[LibDir1]}),
+				       {[Rel1],[Rel1],[LibDir1]}),
     Rel1Dir = filename:dirname(Rel1),
     Rel2Dir = filename:dirname(Rel2),
     
@@ -647,9 +682,409 @@ otp_5761(Conf) when is_list(Conf) ->
     App11Dir = rpc:call(Node, code, lib_dir, [app1]),
     App2aDir = rpc:call(Node, code, lib_dir, [app2]),
 
-    %% Stop the slave node
-    true = stop_node(Node),
     ok.
+
+otp_5761(cleanup,_Conf) ->
+    stop_node(node_name(otp_5761)).
+
+
+%% When a new version of an application is added, but no module is
+%% changed - the path was not updated - i.e. code:priv_dir would point
+%% to the old location.
+otp_9402(Conf) when is_list(Conf) ->
+    %% Set some paths
+    PrivDir = priv_dir(Conf),
+    Dir = filename:join(PrivDir,"otp_9402"),
+    LibDir = filename:join(?config(data_dir, Conf), "lib"),
+
+    %% Create the releases
+    Rel1 = create_and_install_fake_first_release(Dir,
+						 [{a,"1.1",LibDir}]),
+    Rel2 = create_fake_upgrade_release(Dir,
+				       "2",
+				       [{a,"1.2",LibDir}],
+				       {[Rel1],[Rel1],[LibDir]}),
+    Rel1Dir = filename:dirname(Rel1),
+    Rel2Dir = filename:dirname(Rel2),
+
+    %% Start a slave node
+    {ok, Node} = t_start_node(otp_9402, Rel1, filename:join(Rel1Dir,"sys.config")),
+
+    %% Check path
+    Dir1 = filename:join([LibDir, "a-1.1"]),
+    Dir1 = rpc:call(Node, code, lib_dir, [a]),
+    ABeam = rpc:call(Node, code, which, [a]),
+
+    %% Install second release, with no changed modules
+    {ok, RelVsn2} =
+	rpc:call(Node, release_handler, set_unpacked,
+		 [Rel2++".rel", [{a,"1.2",LibDir}]]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "relup")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "start.boot")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "sys.config")]),
+
+    {ok, RelVsn1, []} =
+	rpc:call(Node, release_handler, install_release, [RelVsn2]),
+
+    %% Check path
+    Dir2 = filename:join([LibDir, "a-1.2"]),
+    Dir2 = rpc:call(Node, code, lib_dir, [a]),
+    APrivDir2 = rpc:call(Node, code, priv_dir, [a]),
+    true = filelib:is_regular(filename:join(APrivDir2,"file")),
+
+    %% Just to make sure no modules have been re-loaded
+    ABeam = rpc:call(Node, code, which, [a]),
+
+    %% Install RelVsn1 again
+    {ok, _OtherVsn, []} =
+	rpc:call(Node, release_handler, install_release, [RelVsn1]),
+
+    %% Check path
+    Dir1 = rpc:call(Node, code, lib_dir, [a]),
+    APrivDir1 = rpc:call(Node, code, priv_dir, [a]),
+    false = filelib:is_regular(filename:join(APrivDir1,"file")),
+
+    %% Just to make sure no modules have been re-loaded
+    ABeam = rpc:call(Node, code, which, [a]),
+
+    ok.
+
+otp_9402(cleanup,_Conf) ->
+    stop_node(node_name(otp_9402)).
+
+
+%% When a module is deleted in an appup instruction, the upgrade
+%% failed if the module was not loaded.
+otp_9417(Conf) when is_list(Conf) ->
+    %% Set some paths
+    PrivDir = priv_dir(Conf),
+    Dir = filename:join(PrivDir,"otp_9417"),
+    LibDir = filename:join(?config(data_dir, Conf), "lib"),
+
+    %% Create the releases
+    Rel1 = create_and_install_fake_first_release(Dir,
+						 [{b,"1.0",LibDir}]),
+    Rel2 = create_fake_upgrade_release(Dir,
+				       "2",
+				       [{b,"2.0",LibDir}],
+				       {[Rel1],[Rel1],[LibDir]}),
+    Rel1Dir = filename:dirname(Rel1),
+    Rel2Dir = filename:dirname(Rel2),
+
+    %% Start a slave node
+    {ok, Node} = t_start_node(otp_9417, Rel1, filename:join(Rel1Dir,"sys.config")),
+
+    %% Check paths
+    Dir1 = filename:join([LibDir, "b-1.0"]),
+    Dir1 = rpc:call(Node, code, lib_dir, [b]),
+    BLibBeam = filename:join([Dir1,"ebin","b_lib.beam"]),
+    BLibBeam = rpc:call(Node,code,which,[b_lib]),
+    false = rpc:call(Node,code,is_loaded,[b_lib]),
+    false = rpc:call(Node,code,is_loaded,[b_server]),
+
+    %% Install second release, which removes b_lib module
+    {ok, RelVsn2} =
+	rpc:call(Node, release_handler, set_unpacked,
+		 [Rel2++".rel", [{b,"2.0",LibDir}]]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "relup")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "start.boot")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "sys.config")]),
+
+    {ok, _RelVsn1, []} =
+	rpc:call(Node, release_handler, install_release, [RelVsn2]),
+
+    %% Check that the module does no longer exist
+    false = rpc:call(Node, code, is_loaded, [b_lib]),
+    non_existing = rpc:call(Node, code, which, [b_lib]),
+
+    %% And check some paths
+    Dir2 = filename:join([LibDir, "b-2.0"]),
+    Dir2 = rpc:call(Node, code, lib_dir, [b]),
+    BServerBeam = filename:join([Dir2,"ebin","b_server.beam"]),
+    {file,BServerBeam} = rpc:call(Node,code,is_loaded,[b_server]),
+    ok.
+
+otp_9417(cleanup,_Conf) ->
+    stop_node(node_name(otp_9417)).
+
+
+%% OTP-9395 - performance problems when there are MANY processes
+%% Test that the procedure of checking for old code before an upgrade
+%% can be started is "very much faster" when there is no old code in
+%% the system.
+otp_9395_check_old_code(Conf) when is_list(Conf) ->
+
+    NProcs = 1000,
+    MPath = filename:join([?config(data_dir,Conf),"lib","many_mods-1.0","ebin"]),
+    code:add_path(MPath),
+
+    %% Start NProc processes, each referencing each module
+    {Modules,Pids} = m:start(NProcs),
+
+    %% Load each module again in order to get old code
+    [code:load_file(Mod) || Mod <- Modules],
+    true = erlang:check_old_code(m10),
+
+    S = [point_of_no_return |
+	 [{remove,{M,soft_purge,soft_purge}} || M <- Modules]],
+
+    %% Do the old code check, then purge, and redo
+    {T1,{ok,PurgeMods}} = timer:tc(release_handler_1,check_script,[S,[]]),
+    true = (lists:sort(PurgeMods) == lists:sort(Modules)),
+    [code:purge(M) || M <- PurgeMods],
+    {T2,{ok,[]}} = timer:tc(release_handler_1,check_script,[S,[]]),
+
+    %% Cleanup
+    lists:foreach(fun(Pid) -> Pid ! stop end, Pids),
+    lists:foreach(fun(Mod) -> code:purge(Mod),
+			      code:delete(Mod),
+			      code:purge(Mod)
+		  end, Modules),
+    code:del_path(MPath),
+
+    %% Test that second run was much faster than the first
+    if T2 > 0 ->
+	    X = T1/T2,
+	    ct:log("~p procs, ~p mods -> ~n"
+		   "\tWith old code: ~.2f sec~n"
+		   "\tAfter purge: ~.2f sec~n"
+		   "\tT1/T2: ~.2f",
+		   [NProcs,length(Modules),T1/1000000,T2/1000000,X]),
+	    if X < 1000 ->
+		    ct:fail({not_enough_improvement_after_purge,round(X)});
+	       true ->
+		    ok
+	    end;
+       T1 > 0 -> %% Means T1/T2 = infinite
+	    ok;
+       true ->
+	    ct:fail({unexpected_values,T1,T2})
+    end,
+    ok.
+
+
+%% OTP-9395 - performance problems when there are MANY processes
+%% Added option 'purge' to check_install_release
+otp_9395_check_and_purge(Conf) when is_list(Conf) ->
+    %% Set some paths
+    PrivDir = priv_dir(Conf),
+    Dir = filename:join(PrivDir,"otp_9395_check_and_purge"),
+    LibDir = filename:join(?config(data_dir, Conf), "lib"),
+
+    %% Create the releases
+    Rel1 = create_and_install_fake_first_release(Dir,
+						 [{b,"1.0",LibDir}]),
+    Rel2 = create_fake_upgrade_release(Dir,
+				       "2",
+				       [{b,"2.0",LibDir}],
+				       {[Rel1],[Rel1],[LibDir]}),
+    Rel1Dir = filename:dirname(Rel1),
+    Rel2Dir = filename:dirname(Rel2),
+
+    %% Start a slave node
+    {ok, Node} = t_start_node(otp_9395_check_and_purge, Rel1,
+			      filename:join(Rel1Dir,"sys.config")),
+
+    %% Make sure there is old code for b_lib and b_server
+    rpc:call(Node,code,load_file,[b_lib]),
+    rpc:call(Node,code,load_file,[b_lib]),
+    rpc:call(Node,code,load_file,[b_server]),
+    rpc:call(Node,code,load_file,[b_server]),
+    true = rpc:call(Node,erlang,check_old_code,[b_lib]),
+    true = rpc:call(Node,erlang,check_old_code,[b_server]),
+
+    %% Unpack second release, which removes b_lib module and loads b_server
+    {ok, RelVsn2} =
+	rpc:call(Node, release_handler, set_unpacked,
+		 [Rel2++".rel", [{b,"2.0",LibDir}]]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "relup")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "start.boot")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "sys.config")]),
+
+    %% Do check_install_release, and check that old code still exists
+    {ok, _RelVsn1, []} =
+	rpc:call(Node, release_handler, check_install_release, [RelVsn2]),
+    true = rpc:call(Node,erlang,check_old_code,[b_lib]),
+    true = rpc:call(Node,erlang,check_old_code,[b_server]),
+
+    %% Do check_install_release with option 'purge' and check that old
+    %% code is gone
+    {ok, _RelVsn1, []} =
+	rpc:call(Node, release_handler, check_install_release, [RelVsn2,[purge]]),
+    false = rpc:call(Node,erlang,check_old_code,[b_lib]),
+    false = rpc:call(Node,erlang,check_old_code,[b_server]),
+
+    ok.
+
+otp_9395_check_and_purge(cleanup,_Conf) ->
+    stop_node(node_name(otp_9395_check_and_purge)).
+
+
+%% OTP-9395 - performance problems when there are MANY processes
+%% Upgrade which updates many modules (brutal_purge)
+otp_9395_update_many_mods(Conf) when is_list(Conf) ->
+    %% Set some paths
+    PrivDir = priv_dir(Conf),
+    Dir = filename:join(PrivDir,"otp_9395_update_many_mods"),
+    LibDir = filename:join(?config(data_dir, Conf), "lib"),
+
+    %% Create the releases
+    Rel1 = create_and_install_fake_first_release(Dir,
+						 [{many_mods,"1.0",LibDir}]),
+    Rel2 = create_fake_upgrade_release(Dir,
+				       "2",
+				       [{many_mods,"1.1",LibDir}],
+				       {[Rel1],[Rel1],[LibDir]}),
+    Rel1Dir = filename:dirname(Rel1),
+    Rel2Dir = filename:dirname(Rel2),
+
+    %% Start a slave node
+    {ok, Node} = t_start_node(otp_9395_update_many_mods, Rel1,
+			      filename:join(Rel1Dir,"sys.config")),
+
+    %% Start a lot of processes on the new node, all with refs to each
+    %% module that will be updated
+    NProcs = 1000,
+    {Modules,Pids1} = rpc:call(Node,m,start,[NProcs]),
+
+    %% Then load modules in order to get old code
+    [rpc:call(Node,code,load_file,[Mod]) || Mod <- Modules],
+    true = rpc:call(Node,erlang,check_old_code,[m10]),
+
+    %% Unpack second release, which updates all mX modules
+    {ok, RelVsn2} =
+	rpc:call(Node, release_handler, set_unpacked,
+		 [Rel2++".rel", [{many_mods,"1.1",LibDir}]]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "relup")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "start.boot")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "sys.config")]),
+
+    %% First, install release directly and check how much time it takes
+    {TInst0,{ok, _, []}} =
+	timer:tc(rpc,call,[Node, release_handler, install_release, [RelVsn2]]),
+    ct:log("install_release: ~.2f",[TInst0/1000000]),
+
+    %% Restore to old release, spawn processes again and load to get old code
+    {_,RelVsn1} = init:script_id(),
+    {_TInst1,{ok, _, []}} =
+	timer:tc(rpc,call,[Node, release_handler, install_release, [RelVsn1]]),
+%    ct:log("install_release: ~.2f",[_TInst1/1000000]),
+
+    [exit(Pid,kill) || Pid <- Pids1],
+    {Modules,_Pids2} = rpc:call(Node,m,start,[NProcs]),
+    [rpc:call(Node,code,load_file,[Mod]) || Mod <- Modules],
+    true = rpc:call(Node,erlang,check_old_code,[m10]),
+
+    %% Run check_install_release with purge before install this time
+    {TCheck,{ok, _RelVsn1, []}} =
+	timer:tc(rpc,call,[Node, release_handler, check_install_release,
+			   [RelVsn2,[purge]]]),
+    ct:log("check_install_release with purge: ~.2f",[TCheck/1000000]),
+
+    %% Finally install release after check and purge, and check that
+    %% this install was faster than the first.
+    {TInst2,{ok, _RelVsn1, []}} =
+	timer:tc(rpc,call,[Node, release_handler, install_release, [RelVsn2]]),
+    ct:log("install_release: ~.2f",[TInst2/1000000]),
+
+    true = (TInst2 < TInst0),
+
+    ok.
+
+otp_9395_update_many_mods(cleanup,_Conf) ->
+    stop_node(node_name(otp_9395_update_many_mods)).
+
+
+%% OTP-9395 - performance problems when there are MANY processes
+%% Upgrade which removes many modules (brutal_purge)
+otp_9395_rm_many_mods(Conf) when is_list(Conf) ->
+    %% Set some paths
+    PrivDir = priv_dir(Conf),
+    Dir = filename:join(PrivDir,"otp_9395_rm_many_mods"),
+    LibDir = filename:join(?config(data_dir, Conf), "lib"),
+
+    %% Create the releases
+    Rel1 = create_and_install_fake_first_release(Dir,
+						 [{many_mods,"1.0",LibDir}]),
+    Rel2 = create_fake_upgrade_release(Dir,
+				       "2",
+				       [{many_mods,"2.0",LibDir}],
+				       {[Rel1],[Rel1],[LibDir]}),
+    Rel1Dir = filename:dirname(Rel1),
+    Rel2Dir = filename:dirname(Rel2),
+
+    %% Start a slave node
+    {ok, Node} = t_start_node(otp_9395_rm_many_mods, Rel1,
+			      filename:join(Rel1Dir,"sys.config")),
+
+    %% Start a lot of processes on the new node, all with refs to each
+    %% module that will be updated
+    NProcs = 1000,
+    {Modules,Pids1} = rpc:call(Node,m,start,[NProcs]),
+
+    %% Then load modules in order to get old code
+    [rpc:call(Node,code,load_file,[Mod]) || Mod <- Modules],
+    true = rpc:call(Node,erlang,check_old_code,[m10]),
+
+    %% Unpack second release, which removes all mX modules
+    {ok, RelVsn2} =
+	rpc:call(Node, release_handler, set_unpacked,
+		 [Rel2++".rel", [{many_mods,"2.0",LibDir}]]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "relup")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "start.boot")]),
+    ok = rpc:call(Node, release_handler, install_file,
+		  [RelVsn2, filename:join(Rel2Dir, "sys.config")]),
+
+    %% First, install release directly and check how much time it takes
+    {TInst0,{ok, _, []}} =
+	timer:tc(rpc,call,[Node, release_handler, install_release, [RelVsn2]]),
+    ct:log("install_release: ~.2f",[TInst0/1000000]),
+
+    %% Restore to old release, spawn processes again and load to get old code
+    {_,RelVsn1} = init:script_id(),
+    {_TInst1,{ok, _, []}} =
+	timer:tc(rpc,call,[Node, release_handler, install_release, [RelVsn1]]),
+%    ct:log("install_release: ~.2f",[_TInst1/1000000]),
+
+    [exit(Pid,kill) || Pid <- Pids1],
+    {Modules,_Pids2} = rpc:call(Node,m,start,[NProcs]),
+    [rpc:call(Node,code,load_file,[Mod]) || Mod <- Modules],
+    true = rpc:call(Node,erlang,check_old_code,[m10]),
+
+    %% Run check_install_release with purge before install this time
+    {TCheck,{ok, _RelVsn1, []}} =
+	timer:tc(rpc,call,[Node, release_handler, check_install_release,
+			   [RelVsn2,[purge]]]),
+    ct:log("check_install_release with purge: ~.2f",[TCheck/1000000]),
+
+    %% Finally install release after check and purge, and check that
+    %% this install was faster than the first.
+    {TInst2,{ok, _RelVsn1, []}} =
+	timer:tc(rpc,call,[Node, release_handler, install_release, [RelVsn2]]),
+    ct:log("install_release: ~.2f",[TInst2/1000000]),
+
+    true = (TInst2 =< TInst0),
+
+    ok.
+
+otp_9395_rm_many_mods(cleanup,_Conf) ->
+    stop_node(node_name(otp_9395_rm_many_mods)).
+
+
 
 %% Test upgrade and downgrade of applications
 eval_appup(Conf) when is_list(Conf) ->
@@ -983,19 +1418,16 @@ stop_node(Node) ->
     ?t:stop_node(Node).
 
 
-copy_client(Conf,Master,Sname,StartScript) ->
+copy_client(Conf,Master,Sname,Client) ->
     io:format("copy_client(Conf)"),
 
     DataDir = ?config(data_dir, Conf),
     MasterDir = filename:join(priv_dir(Conf),Master),
 
-    {ok,Host} = inet:gethostname(),
-    {ok,IpTuple} = inet:getaddr(Host,inet),
-    IpAddr =  inet_parse:ntoa(IpTuple),
+    {ClientArgs,RelCliDir} = rh_test_lib:get_client_args(Client,Sname,MasterDir,
+							 node_name(Master)),
 
-    CliNode = node_name(Sname),
-
-    Cli = filename:join([MasterDir, "clients", "type1", CliNode]),
+    Cli = filename:join([MasterDir, RelCliDir]),
     ok = filelib:ensure_dir(filename:join([Cli,"bin","."])),
     ok = filelib:ensure_dir(filename:join([Cli,"releases","."])),
     ok = filelib:ensure_dir(filename:join([Cli,"log","."])),
@@ -1003,12 +1435,16 @@ copy_client(Conf,Master,Sname,StartScript) ->
     P1GOrig = filename:join([MasterDir, "releases", "P1G"]),
     ok = copy_tree(Conf,P1GOrig,filename:join(Cli,"releases")),
     
-    ok = subst_file(filename:join([DataDir, "clients", StartScript]),
-		    filename:join([Cli,"bin","start"]),
-		    [{"ROOT",MasterDir},
-		     {"MASTER",atom_to_list(Master)},
-		     {"IPADDR",IpAddr}],
-		    [{chmod,8#0755}]),
+    case os:type() of
+	{unix,_} ->
+	    ok = subst_file(filename:join([DataDir, "start_client"]),
+			    filename:join([Cli,"bin","start"]),
+			    [{"ROOT",MasterDir},
+			     {"CLIENTARGS",ClientArgs}],
+			    [{chmod,8#0755}]);
+	_ ->
+	    ok
+    end,
     
     StartErlData = filename:join([MasterDir, "releases", "start_erl.data"]),
     CliRelDir = filename:join([Cli, "releases"]),
@@ -1030,21 +1466,32 @@ delete_release(Conf) ->
     {ok, Dirs} = file:list_dir(PrivDir),
     ?t:format("========  deleting  ~p~n",[Dirs]),
 
-    ok = delete_release_os(Dirs),
-    ?t:format("========  remaining  ~p~n",[file:list_dir(PrivDir)]),
+    ok = delete_release_os(Dirs--["save"]),
+    {ok,Remaining} = file:list_dir(PrivDir),
+    ?t:format("========  remaining  ~p~n",[Remaining]),
+
+    case Remaining of
+	[] ->
+	    ok;
+	_ ->
+	    delete_release_os(Remaining),
+	    Remaining2 = file:list_dir(PrivDir),
+	    ?t:format("========  remaining after second try ~p~n",[Remaining2])
+    end,
+
     ok = file:set_cwd(OrigWd),
     ok.
 
 
 delete_release_os(Dirs) ->
     case os:type() of
-	      {unix, _} ->
-		  delete_release_unix(Dirs);
-	      {win32, _} ->
-		  delete_release_win32(Dirs);
-	      Os ->
-		  test_server:fail({error, {not_yet_implemented_os, Os}})
-	  end.
+	{unix, _} ->
+	    delete_release_unix(Dirs);
+	{win32, _} ->
+	    delete_release_win32(Dirs);
+	Os ->
+	    test_server:fail({error, {not_yet_implemented_os, Os}})
+    end.
 
 
 delete_release_unix([]) ->
@@ -1075,7 +1522,14 @@ delete_release_win32([]) ->
 delete_release_win32(["save"|Dirs]) ->
     delete_release_win32(Dirs);
 delete_release_win32([Dir|Dirs]) ->
-    Rm = string:concat("rmdir /s ", Dir),
+    Rm =
+       case filelib:is_dir(Dir) of
+          true ->
+             string:concat("rmdir /s /q ", Dir);
+          false ->
+             string:concat("del /q ", Dir)
+       end,
+    ?t:format("============== COMMAND ~p~n",[Rm]),
     [] = os:cmd(Rm),
     delete_release_win32(Dirs).
 
@@ -1200,7 +1654,12 @@ subst_var([], Vars, Result, VarAcc) ->
 
 
 priv_dir(Conf) ->
-    filename:absname(?config(priv_dir, Conf)). % Get rid of trailing slash
+%%    filename:absname(?config(priv_dir, Conf)). % Get rid of trailing slash
+    %% Due to problem with long paths on windows => creating a new
+    %% priv_dir under data_dir
+    Dir = filename:absname(filename:join(?config(data_dir, Conf),priv_dir)),
+    filelib:ensure_dir(filename:join(Dir,"*")),
+    Dir.
 
 latest_version(Dir) ->
     List = filelib:wildcard(Dir ++ "*"),
@@ -1256,11 +1715,27 @@ do_create_p1g(Conf,TargetDir) ->
     ErtsLatest = latest_version(filename:join(code:root_dir(),"erts")),
     ok = copy_tree(Conf, ErtsLatest, ErtsDir, TargetDir),
     ErtsBinDir = filename:join([TargetDir,ErtsDir,bin]),
-    copy_file(filename:join([ErtsBinDir, "epmd"]), BinDir, [preserve]),
-    copy_file(filename:join([ErtsBinDir, "run_erl"]), BinDir, [preserve]),
-    copy_file(filename:join([ErtsBinDir, "to_erl"]), BinDir, [preserve]),
+
+    case os:type() of
+	{unix, _} ->
+	    copy_file(filename:join([ErtsBinDir, "epmd"]), BinDir, [preserve]),
+	    copy_file(filename:join([ErtsBinDir, "run_erl"]), BinDir, [preserve]),
+	    copy_file(filename:join([ErtsBinDir, "to_erl"]), BinDir, [preserve]),
+
+	    %% Create the start_erl shell script
+	    ok = subst_file(filename:join([ErtsBinDir,"start_erl.src"]),
+			    filename:join([BinDir,"start_erl"]),
+			    [{"EMU","beam"}],
+			    [{chmod,8#0755}]);
+	{win32,_} ->
+	    %% Add a batch file to use as HEART_COMMAND
+	    ok = copy_file(filename:join(DataDir, "heart_restart.bat"),
+			   ErtsBinDir,[preserve])
+    end,
 
     copy_file(filename:join(DataDir, "../installer.beam"),
+	      filename:join([DataDir,lib,"installer-1.0",ebin])),
+    copy_file(filename:join(DataDir, "../rh_test_lib.beam"),
 	      filename:join([DataDir,lib,"installer-1.0",ebin])),
 
     %% Create .rel, .script and .boot files
@@ -1272,7 +1747,7 @@ do_create_p1g(Conf,TargetDir) ->
     ok = filelib:ensure_dir(RelFile),
     LibPath = filename:join([DataDir,lib,"*",ebin]),
 
-    TarFile = create_basic_release(RelFile, RelVsn, {ErtsVsn,false},
+    TarFile = create_basic_release(Conf, RelFile, RelVsn, {ErtsVsn,false},
 				   LibPath, [], [], [], []),
 
     %% Extract tar file in target directory (i.e. same directory as erts etc.)
@@ -1286,20 +1761,6 @@ do_create_p1g(Conf,TargetDir) ->
     %% Create RELEASES
     ok = release_handler:create_RELEASES(TargetDir,ReleasesDir,RelFile,[]),
 
-    %% Create start_erl
-    ok = subst_file(filename:join([ErtsBinDir,"start_erl.src"]),
-		    filename:join([BinDir,"start_erl"]),
-		    [{"EMU","beam"}],
-		    [{chmod,8#0755}]),
-    
-    %% Create start script
-    %% Using a customized start script from DataDir where some options
-    %% (heart and nodename) are added compared to the start.src in the
-    %% erlang distribution.
-    ok = subst_file(filename:join(DataDir, "start"),
-		    filename:join([BinDir, "start"]),
-		    [{"ROOT",TargetDir}],
-		    [preserve]),
     ok.
 
 %% Create version P1H - which is P1G + a-1.0
@@ -1336,12 +1797,12 @@ create_upgrade_release(Conf,RelName,RelVsn,Erts,Apps,Config,{UpFromName,Descr}) 
 
     UpFrom = [{filename:join([PrivDir,UpFromName,UpFromName]),Descr}],
 
-    create_basic_release(RelFile, RelVsn, Erts, LibPath,
+    create_basic_release(Conf, RelFile, RelVsn, Erts, LibPath,
 			 Apps, Config, UpFrom, []),
     ok.
 
 %% Create .rel, .script, .boot, sys.config and tar
-create_basic_release(RelFile,RelVsn,{ErtsVsn,ErtsDir},LibPath,ExtraApps,Config,UpFrom,DownTo) ->
+create_basic_release(Conf, RelFile,RelVsn,{ErtsVsn,ErtsDir},LibPath,ExtraApps,Config,UpFrom,DownTo) ->
     RelDir = filename:dirname(RelFile),
     RelFileName = filename:rootname(RelFile),
 
@@ -1370,7 +1831,14 @@ create_basic_release(RelFile,RelVsn,{ErtsVsn,ErtsDir},LibPath,ExtraApps,Config,U
 				_ -> [{erts,ErtsDir}]
 			    end]),
     
-    RelFileName ++ ".tar.gz".
+    TarFileName = RelFileName ++ ".tar.gz",
+
+    case os:type() of
+	{win32,_} when ErtsDir=/=false -> modify_tar_win32(Conf, TarFileName);
+	_ -> ok
+    end,
+
+    TarFileName.
 
 %% Create a .rel file
 create_installer_rel_file(RelFile,RelVsn,ErtsVsn,ExtraApps) ->
@@ -1470,21 +1938,70 @@ permanent_p1h(Node) ->
 copy_installed(Conf,FromNode,ToNodes) ->
     PrivDir = priv_dir(Conf),
     DataDir = ?config(data_dir,Conf),
+
+    %% Instead of using copy_tree on the complete node directory, I'm
+    %% splitting this in separate tar files per subdirectory so the
+    %% log directory can be completely skipped. The reason for this is
+    %% that the tar file might become faulty if the node is alive and
+    %% writing to the log while the tar is created.
+    FromDir = filename:join(PrivDir,FromNode),
+    {ok,FromDirNames} = file:list_dir(FromDir),
+    TempTarFiles =
+	[begin
+	     TempTarFile = filename:join(PrivDir,"temp_" ++ FDN ++ ".tar"),
+	     {ok,Tar} = erl_tar:open(TempTarFile,[write]),
+	     ok = erl_tar:add(Tar,filename:join(FromDir,FDN),FDN,[]),
+	     ok = erl_tar:close(Tar),
+	     TempTarFile
+         end || FDN <- FromDirNames, FDN=/="log"],
     lists:foreach(
       fun(Node) ->
-	      ok = copy_tree(Conf,filename:join(PrivDir,FromNode),Node,PrivDir),
 	      NodeDir = filename:join(PrivDir,Node),
-	      ok = subst_file(filename:join(DataDir, "start"),
-			      filename:join([NodeDir, "bin", "start"]),
-			      [{"ROOT",NodeDir}]),
-	      LogDir = filename:join(NodeDir,log),
-	      {ok,Logs} = file:list_dir(LogDir),
-	      lists:foreach(fun(Log) ->
-				    file:delete(filename:join(LogDir,Log))
-			    end,
-			    Logs)
+	      ok = filelib:ensure_dir(filename:join([NodeDir,"log","*"])),
+              lists:foreach(
+		fun(TempTarFile) ->
+                        ok = erl_tar:extract(TempTarFile,[{cwd,NodeDir}])
+		end, TempTarFiles),
+	      case os:type() of
+		  {unix,_} ->
+		      %% Create start script
+		      %% Using a customized start script from DataDir
+		      %% where some options (heart and nodename) are
+		      %% added compared to the start.src in the erlang
+		      %% distribution.
+		      ok = subst_file(filename:join(DataDir, "start"),
+				      filename:join([NodeDir, "bin", "start"]),
+				      [{"ROOT",NodeDir}],
+				      [preserve]);
+		  {win32,_} ->
+		      %% Write erl.ini
+		      ErtsDirs =
+			  filelib:wildcard(filename:join(NodeDir,"erts-*")),
+		      lists:foreach(
+			fun(ErtsDir) ->
+				ok = subst_file(
+				       filename:join(DataDir, "erl.ini.src"),
+				       filename:join([ErtsDir, "bin", "erl.ini"]),
+				       [{"ROOTDIR",NodeDir},
+					{"BINDIR",filename:join(ErtsDir,"bin")}])
+			end,
+			ErtsDirs),
+
+		      %% The service on windows runs as local
+		      %% administrator (not otptest user), so we need
+		      %% to chmod the release in order to allow the
+		      %% executing node to install releases, write
+		      %% logs etc.
+		      chmod_release_win32(NodeDir)
+	      end
       end,
-      ToNodes).
+      ToNodes),
+
+    lists:foreach(fun(TempTarFile) -> file:delete(TempTarFile) end, TempTarFiles),
+    ok.
+
+chmod_release_win32(Dir) ->
+    os:cmd("echo y|cacls " ++ Dir ++ " /T /E /G Administrators:F").
 
 start_nodes(Conf,Snames,Tag) ->
     PrivDir = priv_dir(Conf),
@@ -1493,19 +2010,42 @@ start_nodes(Conf,Snames,Tag) ->
 	  fun(Sname) ->
 		  NodeDir = filename:join(PrivDir,Sname),
 		  Node = node_name(Sname),
-		  
-		  Script = filename:join([NodeDir,"bin","start"]),
-		  Cmd = "env NODENAME="++atom_to_list(Sname) ++ " " ++ Script,
-		  %% {ok,StartFile} = file:read_file(Cmd),
-		  %% io:format("~s:\n~s~n~n",[Start,binary_to_list(StartFile)]),
-		  Res = os:cmd(Cmd),
-		  io:format("Start ~p: ~p~n=>\t~p~n", [Sname,Cmd,Res]),
+
+		  case os:type() of
+		      {unix,_} ->
+			  start_node_unix(Sname,NodeDir);
+		      {win32,_} ->
+			  start_node_win32(Sname,NodeDir)
+		  end,
 		  Node
 	  end,
 	  Snames),
     wait_nodes_up(Nodes,Tag),
     Nodes.
     
+start_node_unix(Sname,NodeDir) ->
+    Script = filename:join([NodeDir,"bin","start"]),
+    Cmd = "env NODENAME="++atom_to_list(Sname) ++ " " ++ Script,
+    %% {ok,StartFile} = file:read_file(Cmd),
+    %% io:format("~s:\n~s~n~n",[Start,binary_to_list(StartFile)]),
+    Res = os:cmd(Cmd),
+    io:format("Start ~p: ~p~n=>\t~p~n", [Sname,Cmd,Res]).
+
+start_node_win32(Sname,NodeDir) ->
+    Name = atom_to_list(Sname) ++ "_P1G",
+    ErtsBinDir = filename:join(NodeDir,"erts-4.4/bin"),
+
+    StartErlArgs = rh_test_lib:get_start_erl_args(NodeDir),
+    ServiceArgs = rh_test_lib:get_service_args(NodeDir, Sname, StartErlArgs),
+
+    Erlsrv = filename:nativename(filename:join(ErtsBinDir,"erlsrv")),
+    rh_test_lib:erlsrv(Erlsrv,stop,Name),
+    rh_test_lib:erlsrv(Erlsrv,remove,Name),
+    ok = rh_test_lib:erlsrv(Erlsrv,add,Name,ServiceArgs),
+    ok = rh_test_lib:erlsrv(Erlsrv,start,Name),
+    ok.
+
+%% Create a unique node name for each test case
 tc_sname(Config) ->
     tc_sname(Config,"").
 tc_sname(Config,Fix) when is_atom(Fix) ->
@@ -1607,9 +2147,8 @@ create_fake_upgrade_release(Dir,RelVsn,AppDirs,{UpFrom,DownTo,ExtraLibs}) ->
 
     %% And a relup file so it can be upgraded to
     RelupPath = Paths ++ [filename:join([Lib,"*","ebin"]) || Lib <- ExtraLibs],
-    ok = systools:make_relup(Rel,[UpFrom],[DownTo],
-				   [{path,RelupPath},
-				    {outdir,RelDir}]),
+    ok = systools:make_relup(Rel,UpFrom,DownTo,[{path,RelupPath},
+						{outdir,RelDir}]),
     
     Rel.
 
@@ -1649,3 +2188,32 @@ create_fake_release(Dir,RelName,RelVsn,AppDirs) ->
 
 rpc_inst(Node,Func,Args) ->
     rpc:call(Node,installer,Func,[node()|Args]).
+
+delete_all_services() ->
+    ErlSrv = erlsrv:erlsrv(erlang:system_info(version)),
+    [_|Serviceinfo] = string:tokens(os:cmd(ErlSrv ++ " list"),"\n"),
+    Services =
+	[lists:takewhile(fun($\t) -> false; (_) -> true end,S)
+	 || S <- Serviceinfo],
+    ?t:format("Services to remove: ~p~n",[Services]),
+    lists:foreach(fun(S) ->
+			  rh_test_lib:erlsrv(ErlSrv,stop,S),
+			  rh_test_lib:erlsrv(ErlSrv,remove,S)
+		  end,
+		  Services).
+
+modify_tar_win32(Conf, TarFileName) ->
+    DataDir = ?config(data_dir,Conf),
+    PrivDir = priv_dir(Conf),
+    TmpDir = filename:join(PrivDir,"tmp_modify_tar_win32"),
+    ok = erl_tar:extract(TarFileName,[{cwd,TmpDir},compressed]),
+
+    ErtsBinDir = filelib:wildcard(filename:join([TmpDir,"erts-*","bin"])),
+    ok = copy_file(filename:join(DataDir, "heart_restart.bat"),
+		   ErtsBinDir,[preserve]),
+
+    {ok,Fs} = file:list_dir(TmpDir),
+    {ok,T} = erl_tar:open(TarFileName,[write,compressed]),
+    [ok = erl_tar:add(T,filename:join(TmpDir,F),F,[]) || F <- Fs],
+    ok = erl_tar:close(T),
+    ok.

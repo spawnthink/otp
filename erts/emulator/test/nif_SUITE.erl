@@ -35,7 +35,7 @@
 	 resource_takeover/1,
 	 threading/1, send/1, send2/1, send3/1, send_threaded/1, neg/1, 
 	 is_checks/1,
-	 get_length/1, make_atom/1, make_string/1]).
+	 get_length/1, make_atom/1, make_string/1, reverse_list_test/1]).
 
 -export([many_args_100/100]).
 
@@ -60,7 +60,7 @@ all() ->
      iolist_as_binary, resource, resource_binary,
      resource_takeover, threading, send, send2, send3,
      send_threaded, neg, is_checks, get_length, make_atom,
-     make_string].
+     make_string,reverse_list_test].
 
 groups() -> 
     [].
@@ -257,9 +257,53 @@ types(Config) when is_list(Config) ->
                   end,
                   [{},{ok},{{}},{[],{}},{1,2,3,4,5}]),
     Stuff = [[],{},0,0.0,(1 bsl 100),(fun()-> ok end),make_ref(),self()],
-    [eq_cmp(A,clone(B)) || A<-Stuff, B<-Stuff],                   
+    [eq_cmp(A,clone(B)) || A<-Stuff, B<-Stuff],
+
+    {IntSz, LongSz} = type_sizes(),
+    UintMax = (1 bsl (IntSz*8)) - 1,
+    IntMax = UintMax bsr 1,
+    IntMin = -(IntMax+1),
+    UlongMax = (1 bsl (LongSz*8)) - 1,
+    LongMax = UlongMax bsr 1,
+    LongMin = -(LongMax+1),
+    Uint64Max = (1 bsl 64) - 1,
+    Int64Max = Uint64Max bsr 1,
+    Int64Min = -(Int64Max+1),
+    Limits = [{IntMin,IntMax},{0,UintMax},{LongMin,LongMax},{0,UlongMax},{Int64Min,Int64Max},{0,Uint64Max}],
+    io:format("Limits = ~p\n", [Limits]),
+    lists:foreach(fun(I) ->
+			  R1 = echo_int(I),
+			  %%io:format("echo_int(~p) -> ~p\n", [I, R1]),
+			  R2 = my_echo_int(I, Limits),
+			  ?line R1 = R2,
+			  ?line true = (R1 =:= R2),
+			  ?line true = (R1 == R2)
+		  end, int_list()),
+
     ?line verify_tmpmem(TmpMem),
+    ?line true = (compare(-1294536544000, -1178704800000) < 0),
+    ?line true = (compare(-1178704800000, -1294536544000) > 0),
+    ?line true = (compare(-295147905179352825856, -36893488147419103232) < 0),
+    ?line true = (compare(-36893488147419103232, -295147905179352825856) > 0),
+    ?line true = (compare(-29514790517935282585612345678, -36893488147419103232) < 0),
+    ?line true = (compare(-36893488147419103232, -29514790517935282585612345678) > 0),
     ok.
+
+int_list() ->
+    Start = 1 bsl 200,
+    int_list([Start], -Start).
+int_list([N | _]=List, End) when N<End ->
+    List;
+int_list([N | _]=List, End) ->
+    int_list([N - (1 + (abs(N) div 3)) | List], End).
+    
+my_echo_int(I, Limits) ->
+    lists:map(fun({Min,Max}) ->
+		      if I < Min -> false;
+			 I > Max -> false;
+			 true -> I
+		      end
+	      end, Limits).
 
 clone(X) ->
     binary_to_term(term_to_binary(X)).
@@ -1164,15 +1208,23 @@ make_string(Config) when is_list(Config) ->
     AStringWithAccents = [$E,$r,$l,$a,$n,$g,$ ,16#e4,$r,$ ,$e,$t,$t,$ ,$g,$e,$n,$e,$r,$e,$l,$l,$t,$ ,$p,$r,$o,$g,$r,$a,$m,$s,$p,$r,16#e5,$k],
     ?line Strings = {A0String,A0String,A0String,A0String0, AStringWithAccents}.
 
+reverse_list_test(Config) ->
+    ?line ensure_lib_loaded(Config, 1),
+    List = lists:seq(1,100),
+    RevList = lists:reverse(List),
+    ?line RevList = reverse_list(List),
+    ?line badarg = reverse_list(foo).
+
 tmpmem() ->
     case erlang:system_info({allocator,temp_alloc}) of
 	false -> undefined;
 	MemInfo ->
 	    MSBCS = lists:foldl(
 		      fun ({instance, _, L}, Acc) ->
+			      {value,{_,SBMBCS}} = lists:keysearch(sbmbcs, 1, L),
 			      {value,{_,MBCS}} = lists:keysearch(mbcs, 1, L),
 			      {value,{_,SBCS}} = lists:keysearch(sbcs, 1, L),
-			      [MBCS,SBCS | Acc]
+			      [SBMBCS,MBCS,SBCS | Acc]
 		      end,
 		      [],
 		      MemInfo),
@@ -1269,6 +1321,9 @@ send_blob_thread(_,_,_) -> ?nif_stub.
 join_send_thread(_) -> ?nif_stub.
 copy_blob(_) -> ?nif_stub.
 send_term(_,_) -> ?nif_stub.
+reverse_list(_) -> ?nif_stub.
+echo_int(_) -> ?nif_stub.
+type_sizes() -> ?nif_stub.
 
 nif_stub_error(Line) ->
     exit({nif_not_loaded,module,?MODULE,line,Line}).

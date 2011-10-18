@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1999-2010. All Rights Reserved.
+%% Copyright Ericsson AB 1999-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -431,7 +431,7 @@ init(Args) ->
     
     erlang:monitor(process, ClientPid),
     
-    Inet = case gen_tcp:listen(0, [inet6]) of
+    Inet = case gen_tcp:listen(0, [inet6, {ip, loopback}]) of
 	       {ok, Dummyport} ->
 		   gen_tcp:close(Dummyport),
 		   inet6;
@@ -925,6 +925,9 @@ fix_params({{sql_wchar, Max}, InOut, Values}) ->
 fix_params({{sql_wvarchar, Max}, InOut, Values}) ->
     NewValues = string_terminate(Values),
     {?USER_WVARCHAR, Max, fix_inout(InOut), NewValues};
+fix_params({{sql_wlongvarchar, Max}, InOut, Values}) ->
+    NewValues = string_terminate(Values),
+    {?USER_WLONGVARCHAR, Max, fix_inout(InOut), NewValues};
 fix_params({{sql_float, Precision}, InOut, Values}) ->
     {?USER_FLOAT, Precision, fix_inout(InOut), Values};
 fix_params({sql_real, InOut, Values}) ->

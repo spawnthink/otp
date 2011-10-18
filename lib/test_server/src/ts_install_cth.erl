@@ -49,8 +49,7 @@
 
 -include_lib("kernel/include/file.hrl").
 
--type proplist() :: list({atom(),term()}).
--type config() :: proplist().
+-type config() :: proplists:proplist().
 -type reason() :: term().
 -type skip_or_fail() :: {skip, reason()} |
                         {auto_skip, reason()} |
@@ -65,19 +64,19 @@ id(_Opts) ->
     ?MODULE.
 
 %% @doc Always called before any other callback function.
--spec init(Id :: term(), Opts :: proplist()) ->
-    State :: #state{}.
+-spec init(Id :: term(), Opts :: proplists:proplist()) ->
+    {ok, State :: #state{}}.
 init(_Id, Opts) ->
     Nodenames = proplists:get_value(nodenames, Opts, 0),
     Nodes = proplists:get_value(nodes, Opts, 0),
     TSConfDir = proplists:get_value(ts_conf_dir, Opts),
     TargetSystem = proplists:get_value(target_system, Opts, install_local),
     InstallOpts = proplists:get_value(install_opts, Opts, []),
-    #state{ nodenames = Nodenames,
-	    nodes = Nodes,
-	    ts_conf_dir = TSConfDir,
-	    target_system = TargetSystem, 
-	    install_opts = InstallOpts }.
+    {ok, #state{ nodenames = Nodenames,
+		 nodes = Nodes,
+		 ts_conf_dir = TSConfDir,
+		 target_system = TargetSystem, 
+		 install_opts = InstallOpts } }.
 
 %% @doc Called before init_per_suite is called.
 -spec pre_init_per_suite(Suite :: atom(),

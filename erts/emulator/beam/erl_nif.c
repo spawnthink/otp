@@ -578,7 +578,15 @@ int enif_is_identical(Eterm lhs, Eterm rhs)
 
 int enif_compare(Eterm lhs, Eterm rhs)
 {
-    return CMP(lhs,rhs);
+    Sint result = CMP(lhs,rhs);
+
+    if (result < 0) {
+        return -1;
+    } else if (result > 0) {
+        return 1;
+    }
+
+    return result;
 }
 
 int enif_get_tuple(ErlNifEnv* env, Eterm tpl, int* arity, const Eterm** array)
@@ -833,8 +841,11 @@ ERL_NIF_TERM enif_make_uint(ErlNifEnv* env, unsigned i)
 
 ERL_NIF_TERM enif_make_long(ErlNifEnv* env, long i)
 {
+    if (IS_SSMALL(i)) {
+	return make_small(i);
+    }
 #if SIZEOF_LONG == ERTS_SIZEOF_ETERM
-    return IS_SSMALL(i) ? make_small(i) : small_to_big(i, alloc_heap(env,2));
+    return small_to_big(i, alloc_heap(env,2));
 #elif SIZEOF_LONG == 8
     ensure_heap(env,3);
     return erts_sint64_to_big(i, &env->hp);
@@ -843,8 +854,11 @@ ERL_NIF_TERM enif_make_long(ErlNifEnv* env, long i)
 
 ERL_NIF_TERM enif_make_ulong(ErlNifEnv* env, unsigned long i)
 {
+    if (IS_USMALL(0,i)) {
+	return make_small(i);
+    }
 #if SIZEOF_LONG == ERTS_SIZEOF_ETERM
-    return IS_USMALL(0,i) ? make_small(i) : uint_to_big(i,alloc_heap(env,2));
+    return uint_to_big(i,alloc_heap(env,2));
 #elif SIZEOF_LONG == 8
     ensure_heap(env,3);
     return erts_uint64_to_big(i, &env->hp);    
@@ -1005,6 +1019,29 @@ ERL_NIF_TERM enif_make_ref(ErlNifEnv* env)
 void enif_system_info(ErlNifSysInfo *sip, size_t si_size)
 {
     driver_system_info(sip, si_size);
+}
+
+int enif_make_reverse_list(ErlNifEnv* env, ERL_NIF_TERM term, ERL_NIF_TERM *list) {
+    Eterm *listptr, ret = NIL, *hp;
+
+    if (is_nil(term)) {
+	*list = term;
+        return 1;
+    }
+
+    ret = NIL;
+
+    while (is_not_nil(term)) {
+	if (is_not_list(term)) {
+	    return 0;
+	}
+	hp = alloc_heap(env, 2);
+	listptr = list_val(term);
+	ret = CONS(hp, CAR(listptr), ret);
+	term = CDR(listptr);
+    }
+    *list = ret;
+    return 1;
 }
 
 
