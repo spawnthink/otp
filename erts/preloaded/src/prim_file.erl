@@ -740,7 +740,6 @@ write_file_info_int(Port,
     {Atime, Mtime} =
 	case {Atime0, Mtime0} of
 	    {undefined, Mtime0} -> {erlang:localtime(), Mtime0};
-	    {Atime0, undefined} -> {Atime0, Atime0};
 	    Complete -> Complete
 	end,
     drv_command(Port, [?FILE_WRITE_INFO, 
