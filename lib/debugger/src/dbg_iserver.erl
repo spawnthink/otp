@@ -189,7 +189,7 @@ handle_call(all_breaks, _From, State) ->
     {reply, State#state.breaks, State};
 handle_call({all_breaks, Mod}, _From, State) ->
     Reply = lists:filter(fun({{M,_L}, _Options}) ->
-				 M =/= Mod
+				 M =:= Mod
 			 end,
 			 State#state.breaks),
     {reply, Reply, State};
