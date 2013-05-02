@@ -1678,6 +1678,7 @@ block_table(Tab) ->
     Var = {Tab, where_to_commit},
     case is_tab_blocked(val(Var)) of
         {false, Old}->
+            Old = val(Var),
             New = {blocked, Old},
             set(Var, New); % where_to_commit
         {true, _Old}-> % already blocked
