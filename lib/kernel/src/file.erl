@@ -80,12 +80,8 @@
 -define(RAM_FILE, ram_file).           % Module
 
 %% data types
-<<<<<<< HEAD
 -type filename()  :: string().
 -type filename_all() :: string() | binary().
-=======
--type filename()  :: string() | binary().
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
 -type file_info() :: #file_info{}.
 -type fd()        :: #file_descriptor{}.
 -type io_device() :: pid() | fd().
@@ -99,17 +95,11 @@
                       Delay :: non_neg_integer()}
 		   | 'delayed_write' | {'read_ahead', Size :: pos_integer()}
 		   | 'read_ahead' | 'compressed'
-<<<<<<< HEAD
 		   | {'encoding', unicode:encoding()}
 		   | sync.
 -type deep_list() :: [char() | atom() | deep_list()].
 -type name()      :: string() | atom() | deep_list().
 -type name_all()  :: string() | atom() | deep_list() | (RawFilename :: binary()).
-=======
-		   | {'encoding', unicode:encoding()}.
--type deep_list() :: [char() | atom() | deep_list()].
--type name()      :: string() | atom() | deep_list() | (RawFilename :: binary()).
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
 -type posix()     :: 'eacces'  | 'eagain'  | 'ebadf'   | 'ebusy'  | 'edquot'
 		   | 'eexist'  | 'efault'  | 'efbig'   | 'eintr'  | 'einval'
 		   | 'eio'     | 'eisdir'  | 'eloop'   | 'emfile' | 'emlink'
@@ -121,7 +111,6 @@
 -type date_time() :: calendar:datetime().
 -type posix_file_advise() :: 'normal' | 'sequential' | 'random'
                            | 'no_reuse' | 'will_need' | 'dont_need'.
-<<<<<<< HEAD
 -type sendfile_option() :: {chunk_size, non_neg_integer()}
 			 | {use_threads, boolean()}.
 -type file_info_option() :: {'time', 'local'} | {'time', 'universal'} 
@@ -145,8 +134,6 @@ native_name_encoding() ->
 
 %%% End of BIFs
 
-=======
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
 
 %%%-----------------------------------------------------------------
 %%% General functions
@@ -176,11 +163,7 @@ format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
 -spec pid2name(Pid) -> {ok, Filename} | undefined when
-<<<<<<< HEAD
       Filename :: filename_all(),
-=======
-      Filename :: filename(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Pid :: pid().
 
 pid2name(Pid) when is_pid(Pid) ->
@@ -216,70 +199,44 @@ get_cwd(Drive) ->
     check_and_call(get_cwd, [file_name(Drive)]).
 
 -spec set_cwd(Dir) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Dir :: name() | EncodedBinary,
       EncodedBinary :: binary(),
       Reason :: posix() | badarg | no_translation.
-=======
-      Dir :: name(),
-      Reason :: posix() | badarg.
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
 
 set_cwd(Dirname) -> 
     check_and_call(set_cwd, [file_name(Dirname)]).
 
 -spec delete(Filename) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg.
 
 delete(Name) ->
     check_and_call(delete, [file_name(Name)]).
 
 -spec rename(Source, Destination) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Source :: name_all(),
       Destination :: name_all(),
-=======
-      Source :: name(),
-      Destination :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg.
 
 rename(From, To) ->
     check_and_call(rename, [file_name(From), file_name(To)]).
 
 -spec make_dir(Dir) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Dir :: name_all(),
-=======
-      Dir :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg.
 
 make_dir(Name) ->
     check_and_call(make_dir, [file_name(Name)]).
 
 -spec del_dir(Dir) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Dir :: name_all(),
-=======
-      Dir :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg.
 
 del_dir(Name) ->
     check_and_call(del_dir, [file_name(Name)]).
 
 -spec read_file_info(Filename) -> {ok, FileInfo} | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       FileInfo :: file_info(),
       Reason :: posix() | badarg.
 
@@ -301,18 +258,13 @@ altname(Name) ->
     check_and_call(altname, [file_name(Name)]).
 
 -spec read_link_info(Name) -> {ok, FileInfo} | {error, Reason} when
-<<<<<<< HEAD
       Name :: name_all(),
-=======
-      Name :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       FileInfo :: file_info(),
       Reason :: posix() | badarg.
 
 read_link_info(Name) ->
     check_and_call(read_link_info, [file_name(Name)]).
 
-<<<<<<< HEAD
 -spec read_link_info(Name, Opts) -> {ok, FileInfo} | {error, Reason} when
       Name :: name_all(),
       Opts :: [file_info_option()],
@@ -325,17 +277,12 @@ read_link_info(Name, Opts) when is_list(Opts) ->
 
 -spec read_link(Name) -> {ok, Filename} | {error, Reason} when
       Name :: name_all(),
-=======
--spec read_link(Name) -> {ok, Filename} | {error, Reason} when
-      Name :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Filename :: filename(),
       Reason :: posix() | badarg.
 
 read_link(Name) ->
     check_and_call(read_link, [file_name(Name)]).
 
-<<<<<<< HEAD
 -spec read_link_all(Name) -> {ok, Filename} | {error, Reason} when
       Name :: name_all(),
       Filename :: filename_all(),
@@ -346,17 +293,12 @@ read_link_all(Name) ->
 
 -spec write_file_info(Filename, FileInfo) -> ok | {error, Reason} when
       Filename :: name_all(),
-=======
--spec write_file_info(Filename, FileInfo) -> ok | {error, Reason} when
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       FileInfo :: file_info(),
       Reason :: posix() | badarg.
 
 write_file_info(Name, Info = #file_info{}) ->
     check_and_call(write_file_info, [file_name(Name), Info]).
 
-<<<<<<< HEAD
 -spec write_file_info(Filename, FileInfo, Opts) -> ok | {error, Reason} when
       Filename :: name_all(),
       Opts :: [file_info_option()],
@@ -372,17 +314,10 @@ write_file_info(Name, Info = #file_info{}, Opts) when is_list(Opts) ->
       Reason :: posix()
               | badarg
               | {no_translation, Filename :: unicode:latin1_binary()}.
-=======
--spec list_dir(Dir) -> {ok, Filenames} | {error, Reason} when
-      Dir :: name(),
-      Filenames :: [filename()],
-      Reason :: posix() | badarg.
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
 
 list_dir(Name) ->
     check_and_call(list_dir, [file_name(Name)]).
 
-<<<<<<< HEAD
 -spec list_dir_all(Dir) -> {ok, Filenames} | {error, Reason} when
       Dir :: name_all(),
       Filenames :: [filename_all()],
@@ -393,10 +328,6 @@ list_dir_all(Name) ->
 
 -spec read_file(Filename) -> {ok, Binary} | {error, Reason} when
       Filename :: name_all(),
-=======
--spec read_file(Filename) -> {ok, Binary} | {error, Reason} when
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Binary :: binary(),
       Reason :: posix() | badarg | terminated | system_limit.
 
@@ -404,38 +335,23 @@ read_file(Name) ->
     check_and_call(read_file, [file_name(Name)]).
 
 -spec make_link(Existing, New) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Existing :: name_all(),
       New :: name_all(),
-=======
-      Existing :: name(),
-      New :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg.
 
 make_link(Old, New) ->
     check_and_call(make_link, [file_name(Old), file_name(New)]).
 
-<<<<<<< HEAD
 -spec make_symlink(Existing, New) -> ok | {error, Reason} when
       Existing :: name_all(),
       New :: name_all(),
-=======
--spec make_symlink(Name1, Name2) -> ok | {error, Reason} when
-      Name1 :: name(),
-      Name2 :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg.
 
 make_symlink(Old, New) ->
     check_and_call(make_symlink, [file_name(Old), file_name(New)]).
 
 -spec write_file(Filename, Bytes) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Bytes :: iodata(),
       Reason :: posix() | badarg | terminated | system_limit.
 
@@ -447,11 +363,7 @@ write_file(Name, Bin) ->
 %% Meanwhile, it is implemented here, slightly less efficient.
 
 -spec write_file(Filename, Bytes, Modes) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Bytes :: iodata(),
       Modes :: [mode()],
       Reason :: posix() | badarg | terminated | system_limit.
@@ -508,16 +420,10 @@ raw_write_file_info(Name, #file_info{} = Info) ->
 
 %% Contemporary mode specification - list of options
 
-<<<<<<< HEAD
 -spec open(File, Modes) -> {ok, IoDevice} | {error, Reason} when
       File :: Filename | iodata(),
       Filename :: name_all(),
       Modes :: [mode() | ram],
-=======
--spec open(Filename, Modes) -> {ok, IoDevice} | {error, Reason} when
-      Filename :: name(),
-      Modes :: [mode()],
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       IoDevice :: io_device(),
       Reason :: posix() | badarg | system_limit.
 
@@ -605,7 +511,6 @@ advise(#file_descriptor{module = Module} = Handle, Offset, Length, Advise) ->
 advise(_, _, _, _) ->
     {error, badarg}.
 
-<<<<<<< HEAD
 -spec allocate(File, Offset, Length) ->
 	'ok' | {'error', posix()} when
       File :: io_device(),
@@ -617,20 +522,14 @@ allocate(File, Offset, Length) when is_pid(File) ->
 allocate(#file_descriptor{module = Module} = Handle, Offset, Length) ->
     Module:allocate(Handle, Offset, Length).
 
-=======
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
 -spec read(IoDevice, Number) -> {ok, Data} | eof | {error, Reason} when
       IoDevice :: io_device() | atom(),
       Number :: non_neg_integer(),
       Data :: string() | binary(),
-<<<<<<< HEAD
       Reason :: posix()
               | badarg
               | terminated
               | {no_translation, unicode, latin1}.
-=======
-      Reason :: posix() | badarg | terminated.
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
 
 read(File, Sz) when (is_pid(File) orelse is_atom(File)), is_integer(Sz), Sz >= 0 ->
     case io:request(File, {get_chars, '', Sz}) of
@@ -648,14 +547,10 @@ read(_, _) ->
 -spec read_line(IoDevice) -> {ok, Data} | eof | {error, Reason} when
       IoDevice :: io_device() | atom(),
       Data :: string() | binary(),
-<<<<<<< HEAD
       Reason :: posix()
               | badarg
               | terminated
               | {no_translation, unicode, latin1}.
-=======
-      Reason :: posix() | badarg | terminated.
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
 
 read_line(File) when (is_pid(File) orelse is_atom(File)) ->
     case io:request(File, {get_line, ''}) of
@@ -817,11 +712,7 @@ truncate(_) ->
 -spec copy(Source, Destination) -> {ok, BytesCopied} | {error, Reason} when
       Source :: io_device() | Filename | {Filename, Modes},
       Destination :: io_device() | Filename | {Filename, Modes},
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Modes :: [mode()],
       BytesCopied :: non_neg_integer(),
       Reason :: posix() | badarg | terminated.
@@ -833,11 +724,7 @@ copy(Source, Dest) ->
              {ok, BytesCopied} | {error, Reason} when
       Source :: io_device() | Filename | {Filename, Modes},
       Destination :: io_device() | Filename | {Filename, Modes},
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Modes :: [mode()],
       ByteCount :: non_neg_integer() | infinity,
       BytesCopied :: non_neg_integer(),
@@ -1071,11 +958,7 @@ ipread_s32bu_p32bu_2(File,
 %%% provide a higher-lever interface to files.
 
 -spec consult(Filename) -> {ok, Terms} | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Terms :: [term()],
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
@@ -1092,17 +975,10 @@ consult(File) ->
 
 -spec path_consult(Path, Filename) -> {ok, Terms, FullName} | {error, Reason} when
       Path :: [Dir],
-<<<<<<< HEAD
       Dir :: name_all(),
       Filename :: name_all(),
       Terms :: [term()],
       FullName :: filename_all(),
-=======
-      Dir :: name(),
-      Filename :: name(),
-      Terms :: [term()],
-      FullName :: filename(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
 
@@ -1122,11 +998,7 @@ path_consult(Path, File) ->
     end.
 
 -spec eval(Filename) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
 
@@ -1134,11 +1006,7 @@ eval(File) ->
     eval(File, erl_eval:new_bindings()).
 
 -spec eval(Filename, Bindings) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Bindings :: erl_eval:binding_struct(),
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
@@ -1154,15 +1022,9 @@ eval(File, Bs) ->
     end.
 
 -spec path_eval(Path, Filename) -> {ok, FullName} | {error, Reason} when
-<<<<<<< HEAD
       Path :: [Dir :: name_all()],
       Filename :: name_all(),
       FullName :: filename_all(),
-=======
-      Path :: [Dir :: name()],
-      Filename :: name(),
-      FullName :: filename(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
 
@@ -1171,17 +1033,10 @@ path_eval(Path, File) ->
 
 -spec path_eval(Path, Filename, Bindings) ->
              {ok, FullName} | {error, Reason} when
-<<<<<<< HEAD
       Path :: [Dir :: name_all()],
       Filename :: name_all(),
       Bindings :: erl_eval:binding_struct(),
       FullName :: filename_all(),
-=======
-      Path :: [Dir :: name()],
-      Filename :: name(),
-      Bindings :: erl_eval:binding_struct(),
-      FullName :: filename(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
 
@@ -1201,11 +1056,7 @@ path_eval(Path, File, Bs) ->
     end.
 
 -spec script(Filename) -> {ok, Value} | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Value :: term(),
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
@@ -1214,11 +1065,7 @@ script(File) ->
     script(File, erl_eval:new_bindings()).
 
 -spec script(Filename, Bindings) -> {ok, Value} | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Bindings :: erl_eval:binding_struct(),
       Value :: term(),
       Reason :: posix() | badarg | terminated | system_limit
@@ -1236,17 +1083,10 @@ script(File, Bs) ->
 
 -spec path_script(Path, Filename) ->
              {ok, Value, FullName} | {error, Reason} when
-<<<<<<< HEAD
       Path :: [Dir :: name_all()],
       Filename :: name_all(),
       Value :: term(),
       FullName :: filename_all(),
-=======
-      Path :: [Dir :: name()],
-      Filename :: name(),
-      Value :: term(),
-      FullName :: filename(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
 
@@ -1255,19 +1095,11 @@ path_script(Path, File) ->
 
 -spec path_script(Path, Filename, Bindings) ->
           {ok, Value, FullName} | {error, Reason} when
-<<<<<<< HEAD
       Path :: [Dir :: name_all()],
       Filename :: name_all(),
       Bindings :: erl_eval:binding_struct(),
       Value :: term(),
       FullName :: filename_all(),
-=======
-      Path :: [Dir :: name()],
-      Filename :: name(),
-      Bindings :: erl_eval:binding_struct(),
-      Value :: term(),
-      FullName :: filename(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg | terminated | system_limit
               | {Line :: integer(), Mod :: module(), Term :: term()}.
 
@@ -1296,19 +1128,11 @@ path_script(Path, File, Bs) ->
 
 -spec path_open(Path, Filename, Modes) ->
              {ok, IoDevice, FullName} | {error, Reason} when
-<<<<<<< HEAD
       Path :: [Dir :: name_all()],
       Filename :: name_all(),
       Modes :: [mode()],
       IoDevice :: io_device(),
       FullName :: filename_all(),
-=======
-      Path :: [Dir :: name()],
-      Filename :: name(),
-      Modes :: [mode()],
-      IoDevice :: io_device(),
-      FullName :: filename(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Reason :: posix() | badarg | system_limit.
 
 path_open(PathList, Name, Mode) ->
@@ -1330,11 +1154,7 @@ path_open(PathList, Name, Mode) ->
     end.
 
 -spec change_mode(Filename, Mode) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Mode :: integer(),
       Reason :: posix() | badarg.
 
@@ -1343,11 +1163,7 @@ change_mode(Name, Mode)
     write_file_info(Name, #file_info{mode=Mode}).
 
 -spec change_owner(Filename, Uid) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Uid :: integer(),
       Reason :: posix() | badarg.
 
@@ -1356,11 +1172,7 @@ change_owner(Name, OwnerId)
     write_file_info(Name, #file_info{uid=OwnerId}).
 
 -spec change_owner(Filename, Uid, Gid) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Uid :: integer(),
       Gid :: integer(),
       Reason :: posix() | badarg.
@@ -1370,11 +1182,7 @@ change_owner(Name, OwnerId, GroupId)
     write_file_info(Name, #file_info{uid=OwnerId, gid=GroupId}).
 
 -spec change_group(Filename, Gid) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Gid :: integer(),
       Reason :: posix() | badarg.
 
@@ -1383,41 +1191,24 @@ change_group(Name, GroupId)
     write_file_info(Name, #file_info{gid=GroupId}).
 
 -spec change_time(Filename, Mtime) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
       Mtime :: date_time(),
       Reason :: posix() | badarg.
 
 change_time(Name, {{Y, M, D}, {H, Min, Sec}}=Time)
-=======
-      Filename :: name(),
-      Mtime :: date_time(),
-      Reason :: posix() | badarg.
-
-change_time(Name, {{Y, M, D}, {H, Min, Sec}}=Time) 
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
   when is_integer(Y), is_integer(M), is_integer(D),
        is_integer(H), is_integer(Min), is_integer(Sec)->
     write_file_info(Name, #file_info{mtime=Time}).
 
 -spec change_time(Filename, Atime, Mtime) -> ok | {error, Reason} when
-<<<<<<< HEAD
       Filename :: name_all(),
-=======
-      Filename :: name(),
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
       Atime :: date_time(),
       Mtime :: date_time(),
       Reason :: posix() | badarg.
 
 change_time(Name, {{AY, AM, AD}, {AH, AMin, ASec}}=Atime,
-<<<<<<< HEAD
          {{MY, MM, MD}, {MH, MMin, MSec}}=Mtime)
   when is_integer(AY), is_integer(AM), is_integer(AD),
-=======
-         {{MY, MM, MD}, {MH, MMin, MSec}}=Mtime) 
-  when is_integer(AY), is_integer(AM), is_integer(AD), 
->>>>>>> Fix a crash when file:change_time/2,3 are called with invalid dates
        is_integer(AH), is_integer(AMin), is_integer(ASec),
        is_integer(MY), is_integer(MM), is_integer(MD),
        is_integer(MH), is_integer(MMin), is_integer(MSec)->
